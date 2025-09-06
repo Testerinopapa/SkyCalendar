@@ -1,0 +1,90 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum EventType {
+  moon
+  meteor
+  eclipse
+  launch
+  other
+}
+
+model Source {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  url       String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  events    Event[]
+}
+
+model Event {
+  id          String     @id @default(cuid())
+  title       String
+  type        EventType
+  description String?
+  visibility  String?
+  startAt     DateTime
+  endAt       DateTime?
+  positionX   Int?
+  positionY   Int?
+
+  sourceId Int?
+  source   Source?    @relation(fields: [sourceId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  notifications Notification[]
+
+  @@index([startAt])
+  @@index([type])
+}
+
+model User {
+  id        String    @id @default(cuid())
+  email     String?   @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id        String   @id @default(cuid())
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  notifications Notification[]
+}
+
+model Notification {
+  id              String        @id @default(cuid())
+  eventId         String?
+  event           Event?        @relation(fields: [eventId], references: [id])
+  subscriptionId  String?
+  subscription    Subscription? @relation(fields: [subscriptionId], references: [id])
+  channel         String
+  status          String
+  scheduledFor    DateTime?
+  sentAt          DateTime?
+  error           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([eventId])
+  @@index([subscriptionId])
+}

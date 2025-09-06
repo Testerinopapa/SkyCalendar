@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cosmic Events Explorer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vanta@latest/dist/vanta.net.min.js"></script>
+    <script src="https://unpkg.com/feather-icons"></script>
+    <script src="https://cdn.jsdelivr.net/npm/feather-icons/dist/feather.min.js"></script>
+    <style>
+        .event-node {
+            transition: all 0.3s ease;
+        }
+        .event-node:hover {
+            transform: scale(1.2);
+            filter: drop-shadow(0 0 10px currentColor);
+        }
+        .event-tooltip {
+            backdrop-filter: blur(10px);
+            background-color: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .countdown-pulse {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7); }
+            70% { box-shadow: 0 0 0 15px rgba(255, 255, 255, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-white overflow-hidden h-screen">
+    <div id="vanta-bg" class="absolute inset-0 z-0"></div>
+    
+    <div class="relative z-10 h-screen flex flex-col">
+        <!-- Header -->
+        <header class="p-6 flex justify-between items-center">
+            <h1 class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-blue-500">
+                Cosmic Events Explorer
+            </h1>
+            <div class="flex space-x-4">
+                <button class="px-4 py-2 rounded-full bg-slate-800 hover:bg-slate-700 transition">
+                    <i data-feather="calendar"></i>
+                </button>
+                <button class="px-4 py-2 rounded-full bg-slate-800 hover:bg-slate-700 transition">
+                    <i data-feather="settings"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="flex-1 relative overflow-hidden">
+            <div id="cosmic-map" class="w-full h-full relative">
+                <!-- Events will be dynamically placed here -->
+                <div class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
+                    <div class="event-node countdown-pulse text-blue-400" style="top: 150px; left: 200px;">
+                        <div class="w-6 h-6 rounded-full bg-current"></div>
+                        <div class="event-tooltip absolute left-full ml-2 p-4 rounded-lg w-64 hidden">
+                            <h3 class="font-bold text-lg">Total Lunar Eclipse</h3>
+                            <p class="text-sm opacity-80">May 15-16, 2022</p>
+                            <p class="text-xs mt-2">Visible: Americas, Europe, Africa</p>
+                            <button class="mt-3 px-3 py-1 bg-blue-600 rounded text-xs hover:bg-blue-500 transition">
+                                Set Reminder
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Upcoming Event Panel -->
+        <div class="absolute bottom-6 left-6 right-6 bg-slate-800/80 rounded-xl p-4 backdrop-blur-sm border border-slate-700/50">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h3 class="font-bold text-lg">Next: Perseid Meteor Shower</h3>
+                    <p class="text-sm opacity-80">Peak: August 12-13, 2023</p>
+                </div>
+                <div class="text-xl font-mono">
+                    <span id="countdown-days">42</span>d 
+                    <span id="countdown-hours">08</span>h 
+                    <span id="countdown-mins">23</span>m
+                </div>
+                <button class="px-4 py-2 bg-purple-600 rounded-lg hover:bg-purple-500 transition flex items-center">
+                    <i data-feather="eye" class="mr-2"></i> View Details
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize Vanta.js background
+        VANTA.NET({
+            el: "#vanta-bg",
+            mouseControls: true,
+            touchControls: true,
+            gyroControls: false,
+            minHeight: 200.00,
+            minWidth: 200.00,
+            scale: 1.00,
+            scaleMobile: 1.00,
+            color: 0x3b82f6,
+            backgroundColor: 0x020617,
+            points: 12.00,
+            maxDistance: 22.00,
+            spacing: 18.00
+        });
+
+        // Sample event data
+        const events = [
+            {
+                id: 1,
+                title: "Total Lunar Eclipse",
+                date: "2023-05-15",
+                type: "moon",
+                visibility: "Americas, Europe, Africa",
+                position: { x: 150, y: 200 }
+            },
+            {
+                id: 2,
+                title: "Perseid Meteor Shower",
+                date: "2023-08-12",
+                type: "meteor",
+                visibility: "Northern Hemisphere",
+                position: { x: -100, y: 50 }
+            },
+            {
+                id: 3,
+                title: "Solar Eclipse",
+                date: "2023-10-14",
+                type: "eclipse",
+                visibility: "Americas",
+                position: { x: -50, y: -150 }
+            },
+            {
+                id: 4,
+                title: "Artemis II Launch",
+                date: "2024-11-01",
+                type: "launch",
+                visibility: "Florida, USA",
+                position: { x: 200, y: -100 }
+            }
+        ];
+
+        // Generate event nodes
+        function generateEventNodes() {
+            const map = document.getElementById('cosmic-map');
+            
+            events.forEach(event => {
+                const node = document.createElement('div');
+                node.className = `event-node absolute cursor-pointer`;
+                node.style.left = `${event.position.x}px`;
+                node.style.top = `${event.position.y}px`;
+                
+                // Set color based on event type
+                let colorClass = '';
+                switch(event.type) {
+                    case 'moon': colorClass = 'text-blue-300'; break;
+                    case 'meteor': colorClass = 'text-yellow-300'; break;
+                    case 'eclipse': colorClass = 'text-orange-400'; break;
+                    case 'launch': colorClass = 'text-red-400'; break;
+                }
+                
+                node.innerHTML = `
+                    <div class="w-4 h-4 rounded-full bg-current ${colorClass}"></div>
+                    <div class="event-tooltip absolute left-full ml-2 p-4 rounded-lg w-64 hidden">
+                        <h3 class="font-bold text-lg">${event.title}</h3>
+                        <p class="text-sm opacity-80">${new Date(event.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</p>
+                        <p class="text-xs mt-2">Visible: ${event.visibility}</p>
+                        <button class="mt-3 px-3 py-1 ${colorClass.replace('text', 'bg')} rounded text-xs hover:opacity-80 transition">
+                            Set Reminder
+                        </button>
+                    </div>
+                `;
+                
+                // Add hover effects
+                node.addEventListener('mouseenter', () => {
+                    node.querySelector('.event-tooltip').classList.remove('hidden');
+                });
+                
+                node.addEventListener('mouseleave', () => {
+                    node.querySelector('.event-tooltip').classList.add('hidden');
+                });
+                
+                map.appendChild(node);
+            });
+        }
+
+        // Initialize countdown
+        function updateCountdown() {
+            const nextEventDate = new Date('2023-08-12T00:00:00');
+            const now = new Date();
+            const diff = nextEventDate - now;
+            
+            const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+            const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+            
+            document.getElementById('countdown-days').textContent = days.toString().padStart(2, '0');
+            document.getElementById('countdown-hours').textContent = hours.toString().padStart(2, '0');
+            document.getElementById('countdown-mins').textContent = minutes.toString().padStart(2, '0');
+        }
+
+        // Initialize everything
+        document.addEventListener('DOMContentLoaded', () => {
+            feather.replace();
+            generateEventNodes();
+            updateCountdown();
+            setInterval(updateCountdown, 60000);
+        });
+    </script>
+</body>
+</html>
