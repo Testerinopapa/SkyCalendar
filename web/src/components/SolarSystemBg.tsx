@@ -1,10 +1,7 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
-import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
-import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 
 type PlanetSpec = {
   name: string;
@@ -26,6 +23,7 @@ const SIM_DAYS_PER_SECOND = 8;
 export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'medium' | 'high' }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const disposeRef = useRef<() => void>(() => {});
+  const [selected, setSelected] = useState<PlanetSpec | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -35,9 +33,7 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
     scene.background = new THREE.Color(0x020617);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    const presetDpr = preset === 'low' ? 1.25 : preset === 'medium' ? 1.75 : 2;
-    const maxDpr = Number(process.env.NEXT_PUBLIC_SOLAR_DPR_MAX || presetDpr);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, isFinite(maxDpr) ? maxDpr : 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     container.appendChild(renderer.domElement);
 
     // Perspective camera with slight tilt for depth
@@ -46,29 +42,11 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
     const cameraTarget = new THREE.Vector3(0, 0, 0);
     camera.lookAt(cameraTarget);
 
-    // Postprocessing (bloom)
-    const bloomEnabled = (process.env.NEXT_PUBLIC_SOLAR_BLOOM || (preset !== 'low' ? 'true' : 'false')) !== 'false';
-    const bloomStrength = Number(process.env.NEXT_PUBLIC_SOLAR_BLOOM_STRENGTH || (preset === 'high' ? 0.7 : 0.5));
-    const bloomRadius = Number(process.env.NEXT_PUBLIC_SOLAR_BLOOM_RADIUS || 0.8);
-    const bloomThreshold = Number(process.env.NEXT_PUBLIC_SOLAR_BLOOM_THRESHOLD || 0.85);
-    const composer = new EffectComposer(renderer);
-    const renderPass = new RenderPass(scene, camera);
-    composer.addPass(renderPass);
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), bloomStrength, bloomRadius, bloomThreshold);
-    if (bloomEnabled) composer.addPass(bloomPass);
-
-    let resizeTimeout: number | null = null;
     const resize = () => {
       const { clientWidth: w, clientHeight: h } = container;
       renderer.setSize(w, h, false);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
-      composer.setSize(w, h);
-      bloomPass.setSize(w, h);
-      if (resizeTimeout) window.clearTimeout(resizeTimeout);
-      resizeTimeout = window.setTimeout(() => {
-        rebuildStarfield();
-      }, 150);
     };
     resize();
     window.addEventListener("resize", resize);
@@ -93,6 +71,7 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 
     // Orbits and planets
     const planetMeshes: THREE.Mesh[] = [];
+    const nameToMesh = new Map<string, THREE.Mesh>();
     PLANETS.forEach((p) => {
       const orbitGeo = new THREE.RingGeometry(p.orbitRadiusPx - 0.2, p.orbitRadiusPx + 0.2, 256);
       const orbitMat = new THREE.MeshBasicMaterial({ color: 0x334155, side: THREE.DoubleSide, transparent: true, opacity: 0.6 });
@@ -107,64 +86,28 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
       planet.name = p.name;
       scene.add(planet);
       planetMeshes.push(planet);
+      nameToMesh.set(p.name, planet);
     });
 
-    // Starfield (adaptive density)
-    let stars: THREE.Points | null = null;
-    const rebuildStarfield = () => {
-      if (!container) return;
-      if (stars) {
-        scene.remove(stars);
-        const oldGeo = stars.geometry as THREE.BufferGeometry;
-        const oldMat = stars.material as THREE.Material;
-        oldGeo.dispose();
-        // @ts-ignore
-        oldMat.dispose?.();
-        stars = null;
-      }
-      const { clientWidth: w, clientHeight: h } = container;
-      const megapixels = (w * h) / 1_000_000;
-      const dpr = Math.min(window.devicePixelRatio, isFinite(maxDpr) ? maxDpr : 2);
-      const defaultDensity = preset === 'low' ? 350 : preset === 'medium' ? 500 : 650;
-      const density = Number(process.env.NEXT_PUBLIC_SOLAR_STARS_DENSITY || defaultDensity); // points per MP
-      const starCount = Math.min(6000, Math.max(800, Math.floor(megapixels * density * (dpr > 1.5 ? 0.8 : 1))));
-      const starGeo = new THREE.BufferGeometry();
-      const positions = new Float32Array(starCount * 3);
-      for (let i = 0; i < starCount; i++) {
-        const r = 1000 * Math.pow(Math.random(), 0.5);
-        const theta = Math.random() * Math.PI * 2;
-        const phi = Math.acos(2 * Math.random() - 1);
-        positions[i * 3 + 0] = r * Math.sin(phi) * Math.cos(theta);
-        positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-        positions[i * 3 + 2] = r * Math.cos(phi);
-      }
-      starGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-      const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 1.2, sizeAttenuation: true, transparent: true, opacity: 0.8, depthWrite: false });
-      stars = new THREE.Points(starGeo, starMat);
-      scene.add(stars);
-    };
-    rebuildStarfield();
+    // Starfield (GPU friendly)
+    const starCount = 2000;
+    const starGeo = new THREE.BufferGeometry();
+    const positions = new Float32Array(starCount * 3);
+    for (let i = 0; i < starCount; i++) {
+      const r = 1000 * Math.pow(Math.random(), 0.5); // more density near center
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      positions[i * 3 + 0] = r * Math.sin(phi) * Math.cos(theta);
+      positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+      positions[i * 3 + 2] = r * Math.cos(phi);
+    }
+    starGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 1.2, sizeAttenuation: true, transparent: true, opacity: 0.8 });
+    const stars = new THREE.Points(starGeo, starMat);
+    scene.add(stars);
 
     let raf = 0;
     const startMs = performance.now();
-    // Dev-only FPS overlay
-    const showFps = process.env.NODE_ENV !== 'production';
-    const fpsEl = showFps ? document.createElement('div') : null;
-    if (fpsEl) {
-      fpsEl.style.position = 'absolute';
-      fpsEl.style.right = '8px';
-      fpsEl.style.bottom = '8px';
-      fpsEl.style.padding = '2px 6px';
-      fpsEl.style.background = 'rgba(2,6,23,0.6)';
-      fpsEl.style.color = '#9ca3af';
-      fpsEl.style.fontSize = '11px';
-      fpsEl.style.border = '1px solid rgba(148,163,184,0.2)';
-      fpsEl.style.borderRadius = '4px';
-      container.appendChild(fpsEl);
-    }
-    let lastFrame = performance.now();
-    let fpsAcc = 0;
-    let fpsCount = 0;
     const animate = () => {
       const nowMs = performance.now();
       const elapsedSec = (nowMs - startMs) / 1000;
@@ -182,32 +125,36 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
       camera.position.y = 200 + parallax.y * 10;
       camera.lookAt(cameraTarget);
 
-      composer.render();
-      if (fpsEl) {
-        const dt = nowMs - lastFrame;
-        lastFrame = nowMs;
-        const instFps = 1000 / Math.max(1, dt);
-        fpsAcc += instFps;
-        fpsCount++;
-        if (fpsCount >= 12) {
-          fpsEl.textContent = `${(fpsAcc / fpsCount).toFixed(0)} fps`;
-          fpsAcc = 0;
-          fpsCount = 0;
-        }
-      }
+      renderer.render(scene, camera);
       raf = requestAnimationFrame(animate);
     };
     raf = requestAnimationFrame(animate);
 
-    const onVis = () => {
-      if (document.hidden) {
-        cancelAnimationFrame(raf);
+    // Click-to-select using simple hit test in screen space (approximate)
+    const onClick = (e: MouseEvent) => {
+      const rect = container.getBoundingClientRect();
+      const mx = e.clientX - rect.left - rect.width / 2;
+      const my = e.clientY - rect.top - rect.height / 2;
+      let hit: string | null = null;
+      for (const p of PLANETS) {
+        const mesh = nameToMesh.get(p.name)!;
+        const dx = mx - mesh.position.x;
+        const dy = my - mesh.position.y;
+        const r = p.radiusPx + 6;
+        if (dx * dx + dy * dy <= r * r) {
+          hit = p.name;
+          break;
+        }
+      }
+      if (hit) {
+        const planet = PLANETS.find((pp) => pp.name === hit) || null;
+        // React state update outside of RAF
+        setSelected(planet || null);
       } else {
-        lastFrame = performance.now();
-        raf = requestAnimationFrame(animate);
+        setSelected(null);
       }
     };
-    document.addEventListener('visibilitychange', onVis);
+    container.addEventListener('click', onClick);
 
     disposeRef.current = () => {
       cancelAnimationFrame(raf);
@@ -215,8 +162,7 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
       window.removeEventListener("mousemove", onMouse);
       renderer.dispose();
       container.removeChild(renderer.domElement);
-      composer.dispose();
-      if (fpsEl && fpsEl.parentElement) fpsEl.parentElement.removeChild(fpsEl);
+      container.removeEventListener('click', onClick);
       scene.traverse((obj) => {
         const mesh = obj as THREE.Mesh;
         if (mesh.geometry) mesh.geometry.dispose?.();
@@ -228,7 +174,23 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
     return () => disposeRef.current();
   }, []);
 
-  return <div ref={containerRef} className="absolute inset-0 z-0" aria-hidden />;
+  return (
+    <div ref={containerRef} className="absolute inset-0 z-0">
+      {selected && (
+        <div className="absolute bottom-6 left-6 bg-slate-800/90 border border-slate-700/60 rounded-lg p-3 text-sm text-slate-200 max-w-xs z-10">
+          <div className="font-semibold mb-1">{selected.name}</div>
+          <div>Orbit radius: {selected.orbitRadiusPx}px</div>
+          <div>Orbital period: {selected.orbitalPeriodDays} days</div>
+          <button
+            onClick={() => setSelected(null)}
+            className="mt-2 px-2 py-1 text-xs rounded bg-slate-700 hover:bg-slate-600"
+          >
+            Close
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 
