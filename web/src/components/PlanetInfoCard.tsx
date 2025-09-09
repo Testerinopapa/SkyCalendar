@@ -19,8 +19,15 @@ export default function PlanetInfoCard({ planet, onClose, className }: { planet:
 		let alive = true;
 		const name = planet.name.toLowerCase();
 		fetch(`/api/planets/${encodeURIComponent(name)}`)
-			.then((r) => r.json())
-			.then((d) => { if (alive) setDetails(d); })
+			.then(async (r) => {
+				if (!alive) return;
+				if (!r.ok) {
+					setError(`Failed (${r.status})`);
+					return;
+				}
+				const d = await r.json();
+				setDetails(d);
+			})
 			.catch(() => alive && setError("Failed to load details"));
 		return () => { alive = false };
 	}, [planet.name]);

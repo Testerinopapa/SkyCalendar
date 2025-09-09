@@ -18,8 +18,11 @@ export async function GET(_: Request, { params }: { params: { name: string } }) 
 		const q = (params.name || '').toLowerCase();
 		const key = nameMap[q] || q;
 		const data = await lssGet<any>(`/bodies/${encodeURIComponent(key)}`);
+		if (!data || data.error) {
+			return NextResponse.json({ ok: false, error: 'not_found' }, { status: 404 })
+		}
 		return NextResponse.json(normalizeLssPlanet(data));
 	} catch (e) {
-		return NextResponse.json({ ok: false }, { status: 500 })
+		return NextResponse.json({ ok: false }, { status: 502 })
 	}
 }
