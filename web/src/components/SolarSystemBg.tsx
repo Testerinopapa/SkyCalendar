@@ -105,6 +105,10 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
     const mouseNdc = new THREE.Vector2();
     let currentHovered: string | null = null;
     const nameToGlow = new Map<string, THREE.Sprite>();
+    // Declare these BEFORE adding listeners to avoid TDZ errors on early events
+    const planetMeshes: THREE.Mesh[] = [];
+    const hitMeshes: THREE.Mesh[] = [];
+    const nameToMesh = new Map<string, THREE.Mesh>();
     const updateGlow = (nm: string | null) => {
       nameToGlow.forEach((sprite, name) => {
         const mat = sprite.material as THREE.SpriteMaterial;
@@ -160,9 +164,6 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
     scene.add(sun);
 
     // Orbits and planets
-    const planetMeshes: THREE.Mesh[] = [];
-    const hitMeshes: THREE.Mesh[] = [];
-    const nameToMesh = new Map<string, THREE.Mesh>();
     const glowTexture = createGlowTexture();
     PLANETS.forEach((p) => {
       const orbitGeo = new THREE.RingGeometry(p.orbitRadiusPx - 0.2, p.orbitRadiusPx + 0.2, 256);
@@ -355,8 +356,8 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
       }
       pointerDownName = null;
     };
-    window.addEventListener('pointerdown', onPointerDown);
-    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointerdown', onPointerDown, true);
+    window.addEventListener('pointerup', onPointerUp, true);
 
     disposeRef.current = () => {
       cancelAnimationFrame(raf);
@@ -364,8 +365,8 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
       window.removeEventListener("mousemove", onMouse);
       renderer.dispose();
       container.removeChild(renderer.domElement);
-      window.removeEventListener('pointerdown', onPointerDown);
-      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointerdown', onPointerDown, true);
+      window.removeEventListener('pointerup', onPointerUp, true);
       scene.traverse((obj) => {
         const mesh = obj as THREE.Mesh;
         if (mesh.geometry) mesh.geometry.dispose?.();
