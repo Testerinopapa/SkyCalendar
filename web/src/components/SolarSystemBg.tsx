@@ -308,9 +308,6 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
     let pointerDownName: string | null = null;
     const hitTestAtEvent = (e: PointerEvent): string | null => {
       const rect = container.getBoundingClientRect();
-      if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
-        return null;
-      }
       mouseNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       mouseNdc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(mouseNdc, camera);
@@ -337,11 +334,16 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
       }
       return hit;
     };
+    const isInside = (e: PointerEvent) => {
+      const rect = container.getBoundingClientRect();
+      return e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
+    };
     const onPointerDown = (e: PointerEvent) => {
+      if (!isInside(e)) { pointerDownName = null; return; }
       pointerDownName = hitTestAtEvent(e);
     };
     const onPointerUp = (e: PointerEvent) => {
-      const upName = hitTestAtEvent(e);
+      const upName = isInside(e) ? hitTestAtEvent(e) : null;
       if (pointerDownName && upName && pointerDownName === upName) {
         // eslint-disable-next-line no-console
         console.log('[SolarSystemBg] focus', upName);
@@ -355,8 +357,8 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
       }
       pointerDownName = null;
     };
-    window.addEventListener('pointerdown', onPointerDown);
-    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointerdown', onPointerDown, { capture: true, passive: true } as AddEventListenerOptions);
+    window.addEventListener('pointerup', onPointerUp, { capture: true, passive: true } as AddEventListenerOptions);
 
     disposeRef.current = () => {
       cancelAnimationFrame(raf);
@@ -364,8 +366,8 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
       window.removeEventListener("mousemove", onMouse);
       renderer.dispose();
       container.removeChild(renderer.domElement);
-      window.removeEventListener('pointerdown', onPointerDown);
-      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointerdown', onPointerDown, { capture: true } as EventListenerOptions);
+      window.removeEventListener('pointerup', onPointerUp, { capture: true } as EventListenerOptions);
       scene.traverse((obj) => {
         const mesh = obj as THREE.Mesh;
         if (mesh.geometry) mesh.geometry.dispose?.();
