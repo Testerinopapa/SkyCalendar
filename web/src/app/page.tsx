@@ -15,6 +15,12 @@ type Event = {
 
 export default function HomePage() {
   const [nextEvent, setNextEvent] = useState<Event | null>(null);
+  const [showLaunches, setShowLaunches] = useState<boolean>(true);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("showLaunches");
+    if (saved !== null) setShowLaunches(saved === "1");
+  }, []);
 
   useEffect(() => {
     fetch("/api/events/next")
@@ -22,6 +28,10 @@ export default function HomePage() {
       .then(setNextEvent)
       .catch(() => setNextEvent(null));
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem("showLaunches", showLaunches ? "1" : "0");
+  }, [showLaunches]);
 
   const countdown = useMemo(() => {
     if (!nextEvent) return null;
@@ -45,7 +55,16 @@ export default function HomePage() {
           <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-blue-500">
             Cosmic Events Explorer
           </h1>
-          <div className="flex space-x-4">
+          <div className="flex space-x-4 items-center">
+            <label className="flex items-center gap-2 text-sm opacity-80">
+              <input
+                type="checkbox"
+                className="accent-purple-500"
+                checked={showLaunches}
+                onChange={(e) => setShowLaunches(e.target.checked)}
+              />
+              Show Launches
+            </label>
             <button aria-label="Calendar" className="px-4 py-2 rounded-full bg-slate-800 hover:bg-slate-700 transition">
               <Calendar size={18} />
             </button>
@@ -83,9 +102,11 @@ export default function HomePage() {
                 <Eye size={16} className="mr-2" /> View Details
               </button>
             </div>
-            <div>
-              <LaunchList />
-            </div>
+            {showLaunches && (
+              <div>
+                <LaunchList />
+              </div>
+            )}
           </div>
         </div>
       </div>

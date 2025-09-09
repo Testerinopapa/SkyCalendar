@@ -8,7 +8,7 @@ type Launch = {
 	startAt: string;
 };
 
-export default function LaunchList() {
+export default function LaunchList({ showTitle = true }: { showTitle?: boolean }) {
 	const [launches, setLaunches] = useState<Launch[] | null>(null);
 	const [error, setError] = useState<string | null>(null);
 
@@ -26,7 +26,7 @@ export default function LaunchList() {
 
 	return (
 		<div className="text-slate-200">
-			<h3 className="font-semibold mb-2">Upcoming Launches</h3>
+			{showTitle && <h3 className="font-semibold mb-2">Upcoming Launches</h3>}
 			{error && <div className="text-red-300 text-xs mb-2">{error}</div>}
 			{!launches && !error && <div className="text-slate-400 text-xs">Loading…</div>}
 			{launches && launches.length === 0 && <div className="text-slate-400 text-xs">No data</div>}
