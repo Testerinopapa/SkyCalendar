@@ -417,14 +417,17 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 			let east = new THREE.Vector3().crossVectors(poleUp, wp.clone().normalize());
 			if (east.lengthSq() < 1e-6) east.set(1, 0, 0);
 			east.normalize();
-			// Phase 1: near-surface first-person at north pole
-			const nearHeight = Math.max(planetRadius * 0.05, 0.5);
-			const nearLook = planetRadius * 3.0;
+			// Phase 1: near-surface first-person at north pole (very close)
+			const nearHeight = Math.max(planetRadius * 0.015, 0.2);
+			const nearLook = planetRadius * 2.2;
 			const endHeight = Math.max(planetRadius * 8, 28);
 			const endSide = planetRadius * 0.8; // slight offset on ascent
 			const endLook = planetRadius * 7.0;
 			const nearPos = wp.clone().addScaledVector(poleUp, nearHeight);
-			const nearTarget = nearPos.clone().addScaledVector(east, nearLook);
+			const nearTarget = nearPos
+				.clone()
+				.addScaledVector(east, nearLook)
+				.addScaledVector(poleUp, -planetRadius * 0.25); // slight tilt down so planet fills view
 			const endPos = wp.clone().addScaledVector(poleUp, endHeight).addScaledVector(east, -endSide);
 			const endTarget = endPos.clone().addScaledVector(east, endLook * 0.6).addScaledVector(poleUp, planetRadius * 0.3);
 			return { nearPos, nearTarget, endPos, endTarget, center: wp, radius: planetRadius } as const;
@@ -496,7 +499,7 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 			if (s.mode === 'toImmersive') {
 				s.t = Math.min(1, s.t + (deltaSec / s.duration));
 				const k = easeInOutCubic(s.t);
-				const split = 0.45;
+				const split = 0.6; // extend descent phase
 				if (k < split) {
 					const k1 = k / split;
 					desiredPos.copy(s.startPos).lerp(s.midPos, easeInOutCubic(k1));
@@ -559,9 +562,9 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 			if (immersiveRef.current.mode === 'toImmersive' || immersiveRef.current.mode === 'immersive') {
 				const s2 = immersiveRef.current;
 				const altitude = camera.position.distanceTo(s2.planetCenter) - s2.planetRadius;
-				const fade = THREE.MathUtils.smoothstep(altitude, 0, s2.planetRadius * 3);
-				adjustStarOpacity(fade);
-				setGroundOcclusion(1 - THREE.MathUtils.smoothstep(altitude, 0, s2.planetRadius * 0.8));
+				const fade = THREE.MathUtils.smoothstep(altitude, 0, s2.planetRadius * 4);
+				adjustStarOpacity(fade * 0.95);
+				setGroundOcclusion(1 - THREE.MathUtils.smoothstep(altitude, 0, s2.planetRadius * 1.2));
 			} else if (immersiveRef.current.mode === 'toSystem') {
 				const k = immersiveRef.current.t;
 				adjustStarOpacity(THREE.MathUtils.lerp(0.6, 1, k));
