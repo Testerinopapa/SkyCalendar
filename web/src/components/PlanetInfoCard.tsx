@@ -14,6 +14,7 @@ export default function PlanetInfoCard({ planet, onClose, className }: { planet:
 	const colorHex = `#${planet.color.toString(16).padStart(6, "0")}`;
 	const [details, setDetails] = useState<PlanetDetail | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [showDetails, setShowDetails] = useState<boolean>(false);
 
 	useEffect(() => {
 		let alive = true;
@@ -57,28 +58,41 @@ export default function PlanetInfoCard({ planet, onClose, className }: { planet:
 				<div>{planet.orbitRadiusPx} px</div>
 				<div className="opacity-80">Orbital period</div>
 				<div>{planet.orbitalPeriodDays} days</div>
-				{details && (
-					<>
-						<div className="opacity-80">Mean radius</div>
-						<div>{details.meanRadiusKm ? `${details.meanRadiusKm} km` : "—"}</div>
-						<div className="opacity-80">Mass</div>
-						<div>{details.massKg ? `${Number(details.massKg).toExponential(2)} kg` : "—"}</div>
-						<div className="opacity-80">Gravity</div>
-						<div>{details.gravity ? `${details.gravity} m/s²` : "—"}</div>
-						<div className="opacity-80">Density</div>
-						<div>{details.density ? `${details.density} g/cm³` : "—"}</div>
-						<div className="opacity-80">Sid. rotation</div>
-						<div>{details.sideralRotationHours ? `${details.sideralRotationHours} h` : "—"}</div>
-						<div className="opacity-80">Sid. orbit</div>
-						<div>{details.sideralOrbitDays ? `${details.sideralOrbitDays} d` : "—"}</div>
-					</>
+			</div>
+			<div className="mt-3">
+				<button
+					className="px-2 py-1 text-xs rounded bg-slate-700 hover:bg-slate-600"
+					onClick={() => setShowDetails((v) => !v)}
+					aria-expanded={showDetails}
+				>
+					{showDetails ? "Hide space data" : "Show space data"}
+				</button>
+				{showDetails && (
+					<div className="mt-2">
+						{error && <div className="text-xs text-red-300">{error}</div>}
+						{!details && !error && <div className="text-xs text-slate-400">Loading…</div>}
+						{details && (
+							<>
+								<div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+									<div className="opacity-80">Mean radius</div>
+									<div>{details.meanRadiusKm ? `${details.meanRadiusKm} km` : "—"}</div>
+									<div className="opacity-80">Mass</div>
+									<div>{details.massKg ? `${Number(details.massKg).toExponential(2)} kg` : "—"}</div>
+									<div className="opacity-80">Gravity</div>
+									<div>{details.gravity ? `${details.gravity} m/s²` : "—"}</div>
+									<div className="opacity-80">Density</div>
+									<div>{details.density ? `${details.density} g/cm³` : "—"}</div>
+									<div className="opacity-80">Sid. rotation</div>
+									<div>{details.sideralRotationHours ? `${details.sideralRotationHours} h` : "—"}</div>
+									<div className="opacity-80">Sid. orbit</div>
+									<div>{details.sideralOrbitDays ? `${details.sideralOrbitDays} d` : "—"}</div>
+								</div>
+								<div className="mt-2 text-[10px] opacity-70">Source: {details.source}</div>
+							</>
+						)}
+					</div>
 				)}
 			</div>
-			{error && <div className="mt-2 text-xs text-red-300">{error}</div>}
-			{!details && !error && <div className="mt-2 text-xs text-slate-400">Loading…</div>}
-			{details && (
-				<div className="mt-2 text-[10px] opacity-70">Source: {details.source}</div>
-			)}
 		</div>
 	);
 }
