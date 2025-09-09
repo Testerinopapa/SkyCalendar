@@ -411,27 +411,22 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 			const planetRadius = (planetSpec?.radiusPx ?? 5);
 			const wp = new THREE.Vector3();
 			mesh.getWorldPosition(wp);
-			// Build a stable local frame based on radial direction from origin
-			const r = wp.clone().normalize();
-			const worldUp = new THREE.Vector3(0, 1, 0);
-			let east = new THREE.Vector3().crossVectors(worldUp, r);
-			if (east.lengthSq() < 1e-6) {
-				east = new THREE.Vector3().crossVectors(new THREE.Vector3(1, 0, 0), r);
-			}
+			// Define north pole using world up
+			const poleUp = new THREE.Vector3(0, 1, 0);
+			// East is perpendicular to pole and radial direction
+			let east = new THREE.Vector3().crossVectors(poleUp, wp.clone().normalize());
+			if (east.lengthSq() < 1e-6) east.set(1, 0, 0);
 			east.normalize();
-			const north = new THREE.Vector3().crossVectors(r, east).normalize();
-			// Scale offsets by visual radius for consistent feel across planets
-			// Phase 1: near-surface, first-person along horizon
+			// Phase 1: near-surface first-person at north pole
 			const nearHeight = Math.max(planetRadius * 0.05, 0.5);
-			const nearSide = 0; // stand on local point
 			const nearLook = planetRadius * 3.0;
 			const endHeight = Math.max(planetRadius * 8, 28);
 			const endSide = planetRadius * 0.8; // slight offset on ascent
 			const endLook = planetRadius * 7.0;
-			const nearPos = wp.clone().addScaledVector(r, nearHeight);
-			const nearTarget = nearPos.clone().addScaledVector(east, nearLook).addScaledVector(north, planetRadius * 0.1);
-			const endPos = wp.clone().addScaledVector(r, endHeight).addScaledVector(east, -endSide);
-			const endTarget = (wp.clone().addScaledVector(r, endHeight)).addScaledVector(east, endLook * 0.6).addScaledVector(north, planetRadius * 0.5);
+			const nearPos = wp.clone().addScaledVector(poleUp, nearHeight);
+			const nearTarget = nearPos.clone().addScaledVector(east, nearLook);
+			const endPos = wp.clone().addScaledVector(poleUp, endHeight).addScaledVector(east, -endSide);
+			const endTarget = endPos.clone().addScaledVector(east, endLook * 0.6).addScaledVector(poleUp, planetRadius * 0.3);
 			return { nearPos, nearTarget, endPos, endTarget, center: wp, radius: planetRadius } as const;
 		};
 
