@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import * as THREE from "three";
+import PlanetInfoCard from "./PlanetInfoCard";
 
 type PlanetSpec = {
   name: string;
@@ -357,8 +358,15 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
       }
       pointerDownName = null;
     };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        focusName = null;
+        setSelected(null);
+      }
+    };
     window.addEventListener('pointerdown', onPointerDown, { capture: true, passive: true } as AddEventListenerOptions);
     window.addEventListener('pointerup', onPointerUp, { capture: true, passive: true } as AddEventListenerOptions);
+    window.addEventListener('keydown', onKeyDown, { capture: true } as AddEventListenerOptions);
 
     disposeRef.current = () => {
       cancelAnimationFrame(raf);
@@ -368,6 +376,7 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
       container.removeChild(renderer.domElement);
       window.removeEventListener('pointerdown', onPointerDown, { capture: true } as EventListenerOptions);
       window.removeEventListener('pointerup', onPointerUp, { capture: true } as EventListenerOptions);
+      window.removeEventListener('keydown', onKeyDown, { capture: true } as EventListenerOptions);
       scene.traverse((obj) => {
         const mesh = obj as THREE.Mesh;
         if (mesh.geometry) mesh.geometry.dispose?.();
@@ -392,17 +401,7 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
         </div>
       )}
       {selected && (
-        <div className="absolute bottom-6 left-6 bg-slate-800/90 border border-slate-700/60 rounded-lg p-3 text-sm text-slate-200 max-w-xs z-10">
-          <div className="font-semibold mb-1">{selected.name}</div>
-          <div>Orbit radius: {selected.orbitRadiusPx}px</div>
-          <div>Orbital period: {selected.orbitalPeriodDays} days</div>
-          <button
-            onClick={() => setSelected(null)}
-            className="mt-2 px-2 py-1 text-xs rounded bg-slate-700 hover:bg-slate-600"
-          >
-            Close
-          </button>
-        </div>
+        <PlanetInfoCard planet={selected} onClose={() => setSelected(null)} />
       )}
     </div>
   );
