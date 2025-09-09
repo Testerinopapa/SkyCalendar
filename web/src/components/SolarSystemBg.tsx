@@ -654,8 +654,8 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 								if (selected) {
 									// eslint-disable-next-line no-console
 									console.log('[SolarSystemBg] enter immersive', selected.name);
-									// @ts-ignore
-									enterImmersive(selected.name);
+									const el = containerRef.current as unknown as { __enterImmersive?: (name: string) => void } | null;
+									if (el && el.__enterImmersive) el.__enterImmersive(selected.name);
 								}
 							}}
 						>
@@ -670,8 +670,8 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 					<button
 						className="px-3 py-1 text-xs rounded bg-slate-800/90 border border-slate-700 hover:bg-slate-700"
 						onClick={() => {
-							// @ts-ignore
-							exitImmersive();
+							const el = containerRef.current as unknown as { __exitImmersive?: () => void } | null;
+							if (el && el.__exitImmersive) el.__exitImmersive();
 						}}
 					>
 						Exit immersive
