@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import * as THREE from "three";
+import FlightController from "@/immersive/FlightController";
 import PlanetInfoCard from "./PlanetInfoCard";
 import { daysSinceJ2000, getPlanetPositionAU, ELEMENTS, type PlanetName } from "@/lib/ephemeris";
 
@@ -107,37 +108,7 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 	const uiOverlayRef = useRef<HTMLDivElement | null>(null);
 	const router = useRouter();
 
-	const immersiveRef = useRef<{
-		mode: 'system' | 'toImmersive' | 'immersive' | 'toSystem';
-		planetName: string | null;
-		t: number;
-		duration: number;
-		startPos: THREE.Vector3;
-		startTarget: THREE.Vector3;
-		midPos: THREE.Vector3;
-		midTarget: THREE.Vector3;
-		endPos: THREE.Vector3;
-		endTarget: THREE.Vector3;
-		savedSystemPos: THREE.Vector3;
-		savedSystemTarget: THREE.Vector3;
-		planetCenter: THREE.Vector3;
-		planetRadius: number;
-	}>({
-		mode: 'system',
-		planetName: null,
-		t: 0,
-		duration: 1.6,
-		startPos: new THREE.Vector3(),
-		startTarget: new THREE.Vector3(),
-		midPos: new THREE.Vector3(),
-		midTarget: new THREE.Vector3(),
-		endPos: new THREE.Vector3(),
-		endTarget: new THREE.Vector3(),
-		savedSystemPos: new THREE.Vector3(),
-		savedSystemTarget: new THREE.Vector3(),
-		planetCenter: new THREE.Vector3(),
-		planetRadius: 5,
-	});
+	const flightRef = useRef<FlightController | null>(null);
 
 	const easeInOutCubic = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
 
@@ -174,6 +145,17 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 		camera.position.set(0, 200, 320);
 		const cameraTarget = new THREE.Vector3(0, 0, 0);
 		camera.lookAt(cameraTarget);
+
+		// Initialize flight controller
+		const getPlanetInfo = (planetName: string) => {
+			const mesh = nameToMesh.get(planetName);
+			if (!mesh) return null as any;
+			const center = new THREE.Vector3();
+			mesh.getWorldPosition(center);
+			const spec = PLANETS.find(p => p.name === planetName);
+			return { center, radius: (spec?.radiusPx ?? 5) };
+		};
+		flightRef.current = new FlightController(getPlanetInfo);
 
 		const resize = () => {
 			const { clientWidth: w, clientHeight: h } = container;
@@ -397,6 +379,16 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 		band.frustumCulled = false;
 		starGroup.add(band);
 
+		// Star fade helper
+		const adjustStarOpacity = (factor: number) => {
+			const f = THREE.MathUtils.clamp(factor, 0.05, 1);
+			starGroup.children.forEach((child) => {
+				const pts = child as THREE.Points;
+				const mat = pts.material as THREE.PointsMaterial;
+				mat.opacity = 0.95 * f;
+			});
+		};
+
 		let raf = 0;
 		let focusName: string | null = null;
 		// Time accumulation for simulation; pause when focused
@@ -434,42 +426,15 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 		};
 
 		const enterImmersive = (name: string) => {
-			const s = immersiveRef.current;
-			const path = computeImmersiveTargets(name) as unknown as {
-				nearPos: THREE.Vector3; nearTarget: THREE.Vector3; endPos: THREE.Vector3; endTarget: THREE.Vector3; center: THREE.Vector3; radius: number
-			};
-			s.mode = 'toImmersive';
-			s.planetName = name;
-			s.t = 0;
-			s.startPos.copy(camera.position);
-			s.startTarget.copy(cameraTarget);
-			s.savedSystemPos.copy(camera.position);
-			s.savedSystemTarget.copy(cameraTarget);
-			s.midPos.copy(path.nearPos);
-			s.midTarget.copy(path.nearTarget);
-			s.endPos.copy(path.endPos);
-			s.endTarget.copy(path.endTarget);
-			s.planetCenter.copy(path.center);
-			s.planetRadius = path.radius;
-			// Dynamic duration based on travel distance
-			const dist = s.startPos.distanceTo(s.midPos) + s.midPos.distanceTo(s.endPos);
-			s.duration = THREE.MathUtils.clamp(dist * 0.004, 0.9, 2.2);
+			if (!flightRef.current) return;
+			flightRef.current.enterImmersive(name, camera.position, cameraTarget);
 			setImmersiveUiVisible(true);
 			paused = true;
 		};
 
 		const exitImmersive = () => {
-			const s = immersiveRef.current;
-			s.mode = 'toSystem';
-			s.t = 0;
-			s.startPos.copy(camera.position);
-			s.startTarget.copy(cameraTarget);
-			// Return to previous system view
-			s.endPos.copy(s.savedSystemPos);
-			s.endTarget.copy(s.savedSystemTarget);
-			// Dynamic duration back
-			const dist = s.startPos.distanceTo(s.endPos);
-			s.duration = THREE.MathUtils.clamp(dist * 0.004, 0.8, 2.0);
+			if (!flightRef.current) return;
+			flightRef.current.exitImmersive(camera.position, cameraTarget);
 			setImmersiveUiVisible(false);
 		};
 		const animate = () => {
@@ -495,84 +460,48 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 			const basePos = new THREE.Vector3(parallax.x * 20, 200 + parallax.y * 10, 320);
 			let desiredTarget = new THREE.Vector3(0, 0, 0);
 			let desiredPos = basePos.clone();
-			const s = immersiveRef.current;
-			if (s.mode === 'toImmersive') {
-				s.t = Math.min(1, s.t + (deltaSec / s.duration));
-				const k = easeInOutCubic(s.t);
-				const split = 0.6; // extend descent phase
-				if (k < split) {
-					const k1 = k / split;
-					desiredPos.copy(s.startPos).lerp(s.midPos, easeInOutCubic(k1));
-					desiredTarget.copy(s.startTarget).lerp(s.midTarget, easeInOutCubic(k1));
-				} else {
-					const k2 = (k - split) / (1 - split);
-					desiredPos.copy(s.midPos).lerp(s.endPos, easeInOutCubic(k2));
-					desiredTarget.copy(s.midTarget).lerp(s.endTarget, easeInOutCubic(k2));
+
+			const flight = flightRef.current;
+			if (flight) {
+				const out = flight.update(paused ? 0 : deltaSec);
+				if (out) {
+					desiredPos.copy(out.desiredPosition);
+					desiredTarget.copy(out.desiredTarget);
+					adjustStarOpacity(out.starOpacity);
+					setGroundOcclusion(out.groundOcclusion);
 				}
-				if (s.t >= 1) { s.mode = 'immersive'; }
-			} else if (s.mode === 'immersive') {
-				// Follow planet during immersive
-				if (s.planetName) {
-					const path = computeImmersiveTargets(s.planetName) as unknown as { endPos: THREE.Vector3; endTarget: THREE.Vector3 };
-					desiredPos.copy(path.endPos);
-					desiredTarget.copy(path.endTarget);
+			}
+
+			if (!flight || flight.getMode() === 'system') {
+				if (focusName) {
+					const mesh = nameToMesh.get(focusName);
+					if (mesh) {
+						const wp = new THREE.Vector3();
+						mesh.getWorldPosition(wp);
+						desiredTarget.copy(wp);
+						// Focus offset with gentle parallax
+						const offset = new THREE.Vector3(parallax.x * 10, 25 + parallax.y * 5, 60);
+						desiredPos.copy(wp).add(offset);
+						// Compute lower-left circumference screen position for info card
+						const planet = PLANETS.find(p => p.name === focusName)!;
+						const local = new THREE.Vector3(-planet.radiusPx - 8, -planet.radiusPx - 8, 0);
+						const planetWorld = new THREE.Vector3();
+						mesh.getWorldPosition(planetWorld);
+						const cardWorld = planetWorld.clone().add(local);
+						const clip = cardWorld.clone().project(camera);
+						const rect = container.getBoundingClientRect();
+						const sx = (clip.x * 0.5 + 0.5) * rect.width;
+						const sy = (-clip.y * 0.5 + 0.5) * rect.height;
+						setCardPos({ x: sx, y: sy });
+					}
 				}
-			} else if (s.mode === 'toSystem') {
-				s.t = Math.min(1, s.t + (deltaSec / s.duration));
-				const k = easeInOutCubic(s.t);
-				desiredPos.copy(s.startPos).lerp(s.endPos, k);
-				desiredTarget.copy(s.startTarget).lerp(s.endTarget, k);
-				if (s.t >= 1) { s.mode = 'system'; paused = false; s.planetName = null; }
-			} else if (focusName) {
-				const mesh = nameToMesh.get(focusName);
-				if (mesh) {
-					const wp = new THREE.Vector3();
-					mesh.getWorldPosition(wp);
-					desiredTarget.copy(wp);
-					// Focus offset with gentle parallax
-					const offset = new THREE.Vector3(parallax.x * 10, 25 + parallax.y * 5, 60);
-					desiredPos.copy(wp).add(offset);
-					// Compute lower-left circumference screen position for info card
-					const planet = PLANETS.find(p => p.name === focusName)!;
-					const local = new THREE.Vector3(-planet.radiusPx - 8, -planet.radiusPx - 8, 0);
-					const planetWorld = new THREE.Vector3();
-					mesh.getWorldPosition(planetWorld);
-					const cardWorld = planetWorld.clone().add(local);
-					const clip = cardWorld.clone().project(camera);
-					const rect = container.getBoundingClientRect();
-					const sx = (clip.x * 0.5 + 0.5) * rect.width;
-					const sy = (-clip.y * 0.5 + 0.5) * rect.height;
-					setCardPos({ x: sx, y: sy });
-				}
+				adjustStarOpacity(1);
+				setGroundOcclusion(0);
 			}
 			// Smoothly approach desired camera position and target
 			camera.position.lerp(desiredPos, 0.12);
 			cameraTarget.lerp(desiredTarget, 0.14);
 			camera.lookAt(cameraTarget);
-
-			// Star fade based on altitude when near/inside atmosphere
-			const adjustStarOpacity = (factor: number) => {
-				const f = THREE.MathUtils.clamp(factor, 0.05, 1);
-				starGroup.children.forEach((child) => {
-					const pts = child as THREE.Points;
-					const mat = pts.material as THREE.PointsMaterial;
-					mat.opacity = 0.95 * f;
-				});
-			};
-			if (immersiveRef.current.mode === 'toImmersive' || immersiveRef.current.mode === 'immersive') {
-				const s2 = immersiveRef.current;
-				const altitude = camera.position.distanceTo(s2.planetCenter) - s2.planetRadius;
-				const fade = THREE.MathUtils.smoothstep(altitude, 0, s2.planetRadius * 4);
-				adjustStarOpacity(fade * 0.95);
-				setGroundOcclusion(1 - THREE.MathUtils.smoothstep(altitude, 0, s2.planetRadius * 1.2));
-			} else if (immersiveRef.current.mode === 'toSystem') {
-				const k = immersiveRef.current.t;
-				adjustStarOpacity(THREE.MathUtils.lerp(0.6, 1, k));
-				setGroundOcclusion(THREE.MathUtils.lerp(0.2, 0, k));
-			} else {
-				adjustStarOpacity(1);
-				setGroundOcclusion(0);
-			}
 
 			renderer.render(scene, camera);
 			// Update DOM button positions each frame (only if enabled)
@@ -660,8 +589,8 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 		};
 		const onKeyDown = (e: KeyboardEvent) => {
 			if (e.key === 'Escape') {
-				const s = immersiveRef.current;
-				if (s.mode === 'immersive' || s.mode === 'toImmersive') {
+				const s = flightRef.current;
+				if (s && (s.getMode() === 'immersive' || s.getMode() === 'toImmersive')) {
 					exitImmersive();
 				} else {
 					focusName = null;
