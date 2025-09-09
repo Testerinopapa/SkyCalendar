@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import SolarSystemBg from "@/components/SolarSystemBg";
 import CosmicMap from "@/components/CosmicMap";
+import LaunchList from "@/components/LaunchList";
 import { Settings, Calendar, Eye } from "react-feather";
 
 type Event = {
@@ -59,27 +60,32 @@ export default function HomePage() {
         </main>
 
         <div className="absolute bottom-6 left-6 right-6 bg-slate-800/80 rounded-xl p-4 backdrop-blur-sm border border-slate-700/50">
-          <div className="flex items-center justify-between">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+            <div className="md:col-span-2 flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-lg">{nextEvent ? `Next: ${nextEvent.title}` : "Next Event"}</h3>
+                <p className="text-sm opacity-80">
+                  {nextEvent ? new Date(nextEvent.startAt).toLocaleString() : "—"}
+                </p>
+              </div>
+              <div className="text-xl font-mono">
+                {countdown ? (
+                  <>
+                    <span>{String(countdown.days).padStart(2, "0")}</span>d 
+                    <span>{String(countdown.hours).padStart(2, "0")}</span>h 
+                    <span>{String(countdown.minutes).padStart(2, "0")}</span>m
+                  </>
+                ) : (
+                  <span>--d --h --m</span>
+                )}
+              </div>
+              <button className="ml-4 px-4 py-2 bg-purple-600 rounded-lg hover:bg-purple-500 transition hidden md:flex items-center">
+                <Eye size={16} className="mr-2" /> View Details
+              </button>
+            </div>
             <div>
-              <h3 className="font-bold text-lg">{nextEvent ? `Next: ${nextEvent.title}` : "Next Event"}</h3>
-              <p className="text-sm opacity-80">
-                {nextEvent ? new Date(nextEvent.startAt).toLocaleString() : "—"}
-              </p>
+              <LaunchList />
             </div>
-            <div className="text-xl font-mono">
-              {countdown ? (
-                <>
-                  <span>{String(countdown.days).padStart(2, "0")}</span>d 
-                  <span>{String(countdown.hours).padStart(2, "0")}</span>h 
-                  <span>{String(countdown.minutes).padStart(2, "0")}</span>m
-                </>
-              ) : (
-                <span>--d --h --m</span>
-              )}
-            </div>
-            <button className="px-4 py-2 bg-purple-600 rounded-lg hover:bg-purple-500 transition flex items-center">
-              <Eye size={16} className="mr-2" /> View Details
-            </button>
           </div>
         </div>
       </div>
