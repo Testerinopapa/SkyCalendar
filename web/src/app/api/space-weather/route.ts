@@ -6,6 +6,7 @@ export async function GET() {
 		const events = await ingestRecentSpaceWeather()
 		return NextResponse.json(events)
 	} catch (e) {
-		return NextResponse.json({ ok: false }, { status: 502 })
+		// Graceful fallback: return empty list when provider fails
+		return NextResponse.json([])
 	}
 }

@@ -11,6 +11,7 @@ export async function GET(req: NextRequest) {
 		const data = await openMeteoAstronomy(lat, lon, date)
 		return NextResponse.json(data)
 	} catch (e) {
-		return NextResponse.json({ ok: false }, { status: 502 })
+		// Graceful fallback: minimal structure with dashes
+		return NextResponse.json({ daily: { sunrise: [null], sunset: [null], moonrise: [null], moonset: [null], moon_phase: [null], moon_illumination: [null] } })
 	}
 }

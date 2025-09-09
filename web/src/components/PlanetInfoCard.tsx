@@ -17,6 +17,10 @@ export default function PlanetInfoCard({ planet, onClose, className }: { planet:
 	const [details, setDetails] = useState<PlanetDetail | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [showDetails, setShowDetails] = useState<boolean>(false);
+	const [showWeather, setShowWeather] = useState<boolean>(false);
+	const [showAstronomy, setShowAstronomy] = useState<boolean>(false);
+	const [weatherCount, setWeatherCount] = useState<number | null>(null);
+	const [astroSummary, setAstroSummary] = useState<string | null>(null);
 
 	useEffect(() => {
 		let alive = true;
@@ -34,6 +38,44 @@ export default function PlanetInfoCard({ planet, onClose, className }: { planet:
 			.catch(() => alive && setError("Failed to load details"));
 		return () => { alive = false };
 	}, [planet.name]);
+
+	useEffect(() => {
+		let alive = true;
+		fetch('/api/space-weather')
+			.then(async (r) => {
+				if (!alive) return;
+				if (!r.ok) return;
+				const arr = await r.json();
+				if (Array.isArray(arr)) setWeatherCount(arr.length);
+			})
+			.catch(() => {});
+		const loadAstronomy = (lat: number, lon: number) => {
+			fetch(`/api/astronomy?lat=${lat}&lon=${lon}`)
+				.then(async (r) => {
+					if (!alive) return;
+					if (!r.ok) return;
+					const d = await r.json();
+					const ill = d?.daily?.moon_illumination?.[0];
+					const phase = d?.daily?.moon_phase?.[0];
+					if (ill !== undefined && ill !== null) setAstroSummary(`${ill}%${phase ? ` ${phase}` : ''}`);
+				})
+				.catch(() => {});
+		};
+		try {
+			if (typeof navigator !== 'undefined' && navigator.geolocation) {
+				navigator.geolocation.getCurrentPosition(
+					(pos) => loadAstronomy(pos.coords.latitude, pos.coords.longitude),
+					() => loadAstronomy(37.7749, -122.4194),
+					{ maximumAge: 300000, timeout: 3000 }
+				);
+			} else {
+				loadAstronomy(37.7749, -122.4194);
+			}
+		} catch {
+			loadAstronomy(37.7749, -122.4194);
+		}
+		return () => { alive = false };
+	}, []);
 
 	return (
 		<div
@@ -77,6 +119,33 @@ export default function PlanetInfoCard({ planet, onClose, className }: { planet:
 						</button>
 					);
 				})()}
+
+				{/* Secondary toggles: Space weather and Astronomy */}
+				<div className="mt-2 flex gap-2">
+					{(() => {
+						const base = "px-2 py-1 text-xs rounded transition-colors duration-150 cursor-pointer active:scale-95 focus:outline-none";
+						const cls = showWeather
+							? `${base} bg-amber-600 hover:bg-amber-500 text-white focus:ring-2 focus:ring-amber-400/60`
+							: `${base} bg-slate-700 hover:bg-slate-500 text-slate-100 focus:ring-2 focus:ring-slate-400/60`;
+						return (
+							<button className={cls} onClick={() => setShowWeather((v) => !v)} aria-expanded={showWeather}>
+								{showWeather ? "Hide space weather ▲" : `Space weather ▼${weatherCount !== null ? ` (${weatherCount})` : ''}`}
+							</button>
+						);
+					})()}
+					{(() => {
+						const base = "px-2 py-1 text-xs rounded transition-colors duration-150 cursor-pointer active:scale-95 focus:outline-none";
+						const cls = showAstronomy
+							? `${base} bg-cyan-600 hover:bg-cyan-500 text-white focus:ring-2 focus:ring-cyan-400/60`
+							: `${base} bg-slate-700 hover:bg-slate-500 text-slate-100 focus:ring-2 focus:ring-slate-400/60`;
+						return (
+							<button className={cls} onClick={() => setShowAstronomy((v) => !v)} aria-expanded={showAstronomy}>
+								{showAstronomy ? "Hide astronomy ▲" : `Astronomy ▼${astroSummary ? ` (${astroSummary})` : ''}`}
+							</button>
+						);
+					})()}
+				</div>
+
 				{showDetails && (
 					<div className="mt-2">
 						{error && <div className="text-xs text-red-300">{error}</div>}
@@ -100,14 +169,20 @@ export default function PlanetInfoCard({ planet, onClose, className }: { planet:
 								<div className="mt-2 text-[10px] opacity-70">Source: {details.source}</div>
 							</>
 						)}
-						<div className="mt-3 border-t border-slate-700/60 pt-2">
-							<div className="font-semibold text-xs mb-1">Space Weather</div>
-							<SpaceWeatherList />
-						</div>
-						<div className="mt-3 border-t border-slate-700/60 pt-2">
-							<div className="font-semibold text-xs mb-1">Astronomy (your location)</div>
-							<AstronomyMini lat={37.7749} lon={-122.4194} />
-						</div>
+					</div>
+				)}
+
+				{/* Independent sections controlled by their own buttons */}
+				{showWeather && (
+					<div className="mt-3 border-t border-slate-700/60 pt-2">
+						<div className="font-semibold text-xs mb-1">Space Weather</div>
+						<SpaceWeatherList />
+					</div>
+				)}
+				{showAstronomy && (
+					<div className="mt-3 border-t border-slate-700/60 pt-2">
+						<div className="font-semibold text-xs mb-1">Astronomy (your location)</div>
+						<AstronomyMini lat={37.7749} lon={-122.4194} />
 					</div>
 				)}
 			</div>
