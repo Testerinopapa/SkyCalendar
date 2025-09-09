@@ -53,6 +53,7 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
   const [selected, setSelected] = useState<PlanetSpec | null>(null);
   const [hoveredName, setHoveredName] = useState<string | null>(null);
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
+  const [cardPos, setCardPos] = useState<{ x: number; y: number } | null>(null);
   const buttonsContainerRef = useRef<HTMLDivElement | null>(null);
   const planetButtonMapRef = useRef<Map<string, HTMLButtonElement>>(new Map());
   const router = useRouter();
@@ -276,6 +277,17 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
           // Focus offset with gentle parallax
           const offset = new THREE.Vector3(parallax.x * 10, 25 + parallax.y * 5, 60);
           desiredPos.copy(wp).add(offset);
+          // Compute lower-left circumference screen position for info card
+          const planet = PLANETS.find(p => p.name === focusName)!;
+          const local = new THREE.Vector3(-planet.radiusPx - 8, -planet.radiusPx - 8, 0);
+          const planetWorld = new THREE.Vector3();
+          mesh.getWorldPosition(planetWorld);
+          const cardWorld = planetWorld.clone().add(local);
+          const clip = cardWorld.clone().project(camera);
+          const rect = container.getBoundingClientRect();
+          const sx = (clip.x * 0.5 + 0.5) * rect.width;
+          const sy = (-clip.y * 0.5 + 0.5) * rect.height;
+          setCardPos({ x: sx, y: sy });
         }
       }
       // Smoothly approach desired camera position and target
@@ -400,8 +412,16 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
           {hoveredName}
         </div>
       )}
-      {selected && (
-        <PlanetInfoCard planet={selected} onClose={() => setSelected(null)} />
+      {selected && cardPos && (
+        <div
+          className="absolute z-30"
+          style={{ left: `${cardPos.x}px`, top: `${cardPos.y}px`, transform: 'translate(-100%, 0)' }}
+        >
+          <PlanetInfoCard
+            planet={selected}
+            onClose={() => setSelected(null)}
+          />
+        </div>
       )}
     </div>
   );

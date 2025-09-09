@@ -7,11 +7,11 @@ type PlanetInfo = {
   orbitalPeriodDays: number;
 };
 
-export default function PlanetInfoCard({ planet, onClose }: { planet: PlanetInfo; onClose: () => void }) {
+export default function PlanetInfoCard({ planet, onClose, className }: { planet: PlanetInfo; onClose: () => void; className?: string }) {
   const colorHex = `#${planet.color.toString(16).padStart(6, "0")}`;
   return (
     <div
-      className="absolute bottom-6 left-6 bg-slate-900/90 border border-slate-700/60 rounded-xl p-4 text-sm text-slate-200 max-w-sm z-30 shadow-lg backdrop-blur-sm"
+      className={(className ? className + " " : "") + "bg-slate-900/90 border border-slate-700/60 rounded-xl p-4 text-sm text-slate-200 max-w-sm shadow-lg backdrop-blur-sm"}
       role="dialog"
       aria-labelledby="planet-title"
       aria-modal="false"
