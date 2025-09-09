@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import type { PlanetDetail } from "@/types/domain";
+import SpaceWeatherList from "./SpaceWeatherList";
+import AstronomyMini from "./AstronomyMini";
 
 type PlanetInfo = {
 	name: string;
@@ -59,14 +61,22 @@ export default function PlanetInfoCard({ planet, onClose, className }: { planet:
 				<div className="opacity-80">Orbital period</div>
 				<div>{planet.orbitalPeriodDays} days</div>
 			</div>
-			<div className="mt-3">
-				<button
-					className="px-2 py-1 text-xs rounded bg-slate-700 hover:bg-slate-600"
-					onClick={() => setShowDetails((v) => !v)}
-					aria-expanded={showDetails}
-				>
-					{showDetails ? "Hide space data" : "Show space data"}
-				</button>
+			<div className="mt-3" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>
+				{(() => {
+					const base = "px-2 py-1 text-xs rounded transition-colors duration-150 cursor-pointer active:scale-95 focus:outline-none";
+					const btnClass = showDetails
+						? `${base} bg-purple-600 hover:bg-purple-500 text-white focus:ring-2 focus:ring-purple-400/60`
+						: `${base} bg-slate-700 hover:bg-slate-500 text-slate-100 focus:ring-2 focus:ring-slate-400/60`;
+					return (
+						<button
+							className={btnClass}
+							onClick={() => setShowDetails((v) => !v)}
+							aria-expanded={showDetails}
+						>
+							{showDetails ? "Hide space data ▲" : "Show space data ▼"}
+						</button>
+					);
+				})()}
 				{showDetails && (
 					<div className="mt-2">
 						{error && <div className="text-xs text-red-300">{error}</div>}
@@ -90,6 +100,14 @@ export default function PlanetInfoCard({ planet, onClose, className }: { planet:
 								<div className="mt-2 text-[10px] opacity-70">Source: {details.source}</div>
 							</>
 						)}
+						<div className="mt-3 border-t border-slate-700/60 pt-2">
+							<div className="font-semibold text-xs mb-1">Space Weather</div>
+							<SpaceWeatherList />
+						</div>
+						<div className="mt-3 border-t border-slate-700/60 pt-2">
+							<div className="font-semibold text-xs mb-1">Astronomy (your location)</div>
+							<AstronomyMini lat={37.7749} lon={-122.4194} />
+						</div>
 					</div>
 				)}
 			</div>

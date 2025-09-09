@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import * as THREE from "three";
 import PlanetInfoCard from "./PlanetInfoCard";
@@ -57,6 +58,7 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 	const [cardPos, setCardPos] = useState<{ x: number; y: number } | null>(null);
 	const buttonsContainerRef = useRef<HTMLDivElement | null>(null);
 	const planetButtonMapRef = useRef<Map<string, HTMLButtonElement>>(new Map());
+	const uiOverlayRef = useRef<HTMLDivElement | null>(null);
 	const router = useRouter();
 
 	const logPlanetClick = (planetName: string) => {
@@ -229,13 +231,19 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 		scene.add(stars);
 
 		let raf = 0;
-		const startMs = performance.now();
 		let focusName: string | null = null;
+		// Time accumulation for simulation; pause when focused
+		let simDays = daysSinceJ2000(Date.now());
+		let prevMs = performance.now();
+		let paused = false;
 		const animate = () => {
 			const nowMs = performance.now();
-			const elapsedSec = (nowMs - startMs) / 1000;
-			const simDays = elapsedSec * SIM_DAYS_PER_SECOND;
-			const tDays = daysSinceJ2000(Date.now()) + simDays; // advance app time
+			const deltaSec = (nowMs - prevMs) / 1000;
+			prevMs = nowMs;
+			if (!paused) {
+				simDays += deltaSec * SIM_DAYS_PER_SECOND;
+			}
+			const tDays = simDays;
 
 			PLANETS.forEach((p, idx) => {
 				const pos = getPlanetPositionAU(p.name as any, tDays);
@@ -331,11 +339,18 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 			const rect = container.getBoundingClientRect();
 			return e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
 		};
+		const isFromUiOverlay = (el: EventTarget | null) => {
+			const root = uiOverlayRef.current;
+			return !!(root && el instanceof Node && root.contains(el));
+		};
+
 		const onPointerDown = (e: PointerEvent) => {
+			if (isFromUiOverlay(e.target)) return; // ignore UI interactions
 			if (!isInside(e)) { pointerDownName = null; return; }
 			pointerDownName = hitTestAtEvent(e);
 		};
 		const onPointerUp = (e: PointerEvent) => {
+			if (isFromUiOverlay(e.target)) return; // ignore UI interactions
 			const upName = isInside(e) ? hitTestAtEvent(e) : null;
 			if (pointerDownName && upName && pointerDownName === upName) {
 				// eslint-disable-next-line no-console
@@ -344,9 +359,11 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 				focusName = String(upName);
 				const planet = PLANETS.find(pp => pp.name === focusName) || null;
 				setSelected(planet || null);
-			} else {
+				paused = true; // pause universe when focusing
+			} else if (pointerDownName !== null) {
 				focusName = null;
 				setSelected(null);
+				paused = false; // resume when unfocusing
 			}
 			pointerDownName = null;
 		};
@@ -392,16 +409,18 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 					{hoveredName}
 				</div>
 			)}
-			{selected && cardPos && (
+			{selected && cardPos && createPortal(
 				<div
-					className="absolute z-30"
+					ref={uiOverlayRef}
+					className="fixed z-50 pointer-events-auto"
 					style={{ left: `${cardPos.x}px`, top: `${cardPos.y}px`, transform: 'translate(-100%, 0)' }}
 				>
 					<PlanetInfoCard
 						planet={selected}
 						onClose={() => setSelected(null)}
 					/>
-				</div>
+				</div>,
+				document.body
 			)}
 		</div>
 	);
