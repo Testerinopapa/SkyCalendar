@@ -329,7 +329,7 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
           const mesh = nameToMesh.get(p.name)!;
           const dx = mx - mesh.position.x;
           const dy = my - mesh.position.y;
-        const r = p.radiusPx + 10;
+          const r = p.radiusPx + 10;
           const d2 = dx * dx + dy * dy;
           if (d2 <= r * r && d2 < bestDist) { bestName = p.name; bestDist = d2; }
         }
