@@ -49,6 +49,50 @@ function createGlowTexture(): THREE.Texture {
 	return tex;
 }
 
+function createStarSpriteTexture(): THREE.Texture {
+	const size = 64;
+	const canvas = document.createElement('canvas');
+	canvas.width = size;
+	canvas.height = size;
+	const ctx = canvas.getContext('2d')!;
+	const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+	g.addColorStop(0.0, 'rgba(255,255,255,1.0)');
+	g.addColorStop(0.4, 'rgba(255,255,255,0.6)');
+	g.addColorStop(1.0, 'rgba(255,255,255,0.0)');
+	ctx.fillStyle = g;
+	ctx.fillRect(0, 0, size, size);
+	const tex = new THREE.CanvasTexture(canvas);
+	tex.anisotropy = 1;
+	tex.needsUpdate = true;
+	return tex;
+}
+
+function createOrthonormalBasisFromNormal(normal: THREE.Vector3) {
+	const n = normal.clone().normalize();
+	const arbitrary = Math.abs(n.x) < 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+	const u = new THREE.Vector3().crossVectors(n, arbitrary).normalize();
+	const v = new THREE.Vector3().crossVectors(n, u).normalize();
+	return { n, u, v };
+}
+
+function sampleMilkyWayDirection(basis: { n: THREE.Vector3; u: THREE.Vector3; v: THREE.Vector3 }, bandSigmaRad: number) {
+	// yaw uniformly around the band, latitude from a normal distribution around 0
+	const yaw = Math.random() * Math.PI * 2;
+	// Box-Muller for gaussian latitude
+	const u1 = Math.random();
+	const u2 = Math.random();
+	const z0 = Math.sqrt(-2.0 * Math.log(Math.max(1e-8, u1))) * Math.cos(2.0 * Math.PI * u2);
+	const lat = z0 * bandSigmaRad; // small angle in radians
+	const cosLat = Math.cos(lat);
+	const sinLat = Math.sin(lat);
+	const dir = new THREE.Vector3()
+		.copy(basis.u).multiplyScalar(Math.cos(yaw) * cosLat)
+		.add(new THREE.Vector3().copy(basis.v).multiplyScalar(Math.sin(yaw) * cosLat))
+		.add(new THREE.Vector3().copy(basis.n).multiplyScalar(sinLat))
+		.normalize();
+	return dir;
+}
+
 export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'medium' | 'high' }) {
 	const containerRef = useRef<HTMLDivElement | null>(null);
 	const disposeRef = useRef<() => void>(() => {});
@@ -56,10 +100,33 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 	const [hoveredName, setHoveredName] = useState<string | null>(null);
 	const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
 	const [cardPos, setCardPos] = useState<{ x: number; y: number } | null>(null);
+	const [immersiveUiVisible, setImmersiveUiVisible] = useState<boolean>(false);
 	const buttonsContainerRef = useRef<HTMLDivElement | null>(null);
 	const planetButtonMapRef = useRef<Map<string, HTMLButtonElement>>(new Map());
 	const uiOverlayRef = useRef<HTMLDivElement | null>(null);
 	const router = useRouter();
+
+	const immersiveRef = useRef<{
+		mode: 'system' | 'toImmersive' | 'immersive' | 'toSystem';
+		planetName: string | null;
+		t: number;
+		duration: number;
+		startPos: THREE.Vector3;
+		startTarget: THREE.Vector3;
+		endPos: THREE.Vector3;
+		endTarget: THREE.Vector3;
+	}>({
+		mode: 'system',
+		planetName: null,
+		t: 0,
+		duration: 1.6,
+		startPos: new THREE.Vector3(),
+		startTarget: new THREE.Vector3(),
+		endPos: new THREE.Vector3(),
+		endTarget: new THREE.Vector3(),
+	});
+
+	const easeInOutCubic = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
 
 	const logPlanetClick = (planetName: string) => {
 		try {
@@ -213,22 +280,107 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 			nameToGlow.set(p.name, glow);
 		});
 
-		// Starfield (GPU friendly)
-		const starCount = 2000;
-		const starGeo = new THREE.BufferGeometry();
-		const positions = new Float32Array(starCount * 3);
-		for (let i = 0; i < starCount; i++) {
-			const r = 1000 * Math.pow(Math.random(), 0.5); // more density near center
-			const theta = Math.random() * Math.PI * 2;
-			const phi = Math.acos(2 * Math.random() - 1);
-			positions[i * 3 + 0] = r * Math.sin(phi) * Math.cos(theta);
-			positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-			positions[i * 3 + 2] = r * Math.cos(phi);
+		// Starfield: multi-layer distant shell + Milky Way band
+		const STAR_SHELL_RADIUS = 1800; // less than camera far (2000)
+		const starSprite = createStarSpriteTexture();
+		const starGroup = new THREE.Group();
+		scene.add(starGroup);
+
+		function buildLayer(count: number, size: number, dimBias: number, hueJitter: number) {
+			const geo = new THREE.BufferGeometry();
+			const pos = new Float32Array(count * 3);
+			const col = new Float32Array(count * 3);
+			const tmpColor = new THREE.Color();
+			for (let i = 0; i < count; i++) {
+				const u = Math.random();
+				const v = Math.random();
+				const theta = 2 * Math.PI * u;
+				const phi = Math.acos(2 * v - 1);
+				const x = STAR_SHELL_RADIUS * Math.sin(phi) * Math.cos(theta);
+				const y = STAR_SHELL_RADIUS * Math.sin(phi) * Math.sin(theta);
+				const z = STAR_SHELL_RADIUS * Math.cos(phi);
+				pos[i * 3 + 0] = x;
+				pos[i * 3 + 1] = y;
+				pos[i * 3 + 2] = z;
+				// brightness and slight color temperature variation
+				const mag = Math.pow(Math.random(), dimBias);
+				const intensity = 0.3 + 0.7 * mag;
+				const hue = 0.58 + (Math.random() - 0.5) * hueJitter; // around white/blue
+				tmpColor.setHSL(hue, 0.1 + 0.2 * Math.random(), intensity);
+				col[i * 3 + 0] = tmpColor.r;
+				col[i * 3 + 1] = tmpColor.g;
+				col[i * 3 + 2] = tmpColor.b;
+			}
+			geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+			geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+			const mat = new THREE.PointsMaterial({
+				color: 0xffffff,
+				size,
+				sizeAttenuation: true,
+				map: starSprite,
+				transparent: true,
+				opacity: 0.95,
+				depthWrite: false,
+				depthTest: true,
+				vertexColors: true,
+				blending: THREE.AdditiveBlending,
+			});
+			// @ts-ignore
+			mat.alphaTest = 0.01;
+			const pts = new THREE.Points(geo, mat);
+			pts.frustumCulled = false;
+			starGroup.add(pts);
 		}
-		starGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-		const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 1.2, sizeAttenuation: true, transparent: true, opacity: 0.8 });
-		const stars = new THREE.Points(starGeo, starMat);
-		scene.add(stars);
+
+		// Density per preset
+		const baseCount = preset === 'low' ? 1500 : (preset === 'medium' ? 3000 : 5000);
+		const brightCount = preset === 'low' ? 250 : (preset === 'medium' ? 450 : 700);
+		const milkyCount = preset === 'low' ? 800 : (preset === 'medium' ? 1400 : 2200);
+
+		buildLayer(baseCount, 1.2, 3.0, 0.04);   // many dim small stars
+		buildLayer(brightCount, 2.0, 1.8, 0.08); // fewer brighter, slightly larger
+
+		// Milky Way band centered on a fixed great circle (choose an arbitrary, pleasing orientation)
+		const bandNormal = new THREE.Vector3(0.2, 0.9, -0.3).normalize();
+		const basis = createOrthonormalBasisFromNormal(bandNormal);
+		const bandGeo = new THREE.BufferGeometry();
+		const bandPos = new Float32Array(milkyCount * 3);
+		const bandCol = new Float32Array(milkyCount * 3);
+		const bandColor = new THREE.Color();
+		const bandSigmaRad = THREE.MathUtils.degToRad(12); // band half-thickness
+		for (let i = 0; i < milkyCount; i++) {
+			const dir = sampleMilkyWayDirection(basis, bandSigmaRad);
+			bandPos[i * 3 + 0] = dir.x * STAR_SHELL_RADIUS;
+			bandPos[i * 3 + 1] = dir.y * STAR_SHELL_RADIUS;
+			bandPos[i * 3 + 2] = dir.z * STAR_SHELL_RADIUS;
+			// slightly bluish/whitish band with more dim-to-mid brightness
+			const mag = Math.pow(Math.random(), 2.2);
+			const intensity = 0.35 + 0.65 * mag;
+			const hue = 0.56 + (Math.random() - 0.5) * 0.03;
+			bandColor.setHSL(hue, 0.12 + 0.12 * Math.random(), intensity);
+			bandCol[i * 3 + 0] = bandColor.r;
+			bandCol[i * 3 + 1] = bandColor.g;
+			bandCol[i * 3 + 2] = bandColor.b;
+		}
+		bandGeo.setAttribute("position", new THREE.BufferAttribute(bandPos, 3));
+		bandGeo.setAttribute("color", new THREE.BufferAttribute(bandCol, 3));
+		const bandMat = new THREE.PointsMaterial({
+			color: 0xffffff,
+			size: 1.5,
+			sizeAttenuation: true,
+			map: starSprite,
+			transparent: true,
+			opacity: 0.9,
+			depthWrite: false,
+			depthTest: true,
+			vertexColors: true,
+			blending: THREE.AdditiveBlending,
+		});
+		// @ts-ignore
+		bandMat.alphaTest = 0.01;
+		const band = new THREE.Points(bandGeo, bandMat);
+		band.frustumCulled = false;
+		starGroup.add(band);
 
 		let raf = 0;
 		let focusName: string | null = null;
@@ -236,6 +388,46 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 		let simDays = daysSinceJ2000(Date.now());
 		let prevMs = performance.now();
 		let paused = false;
+
+		const computeImmersiveTargets = (name: string) => {
+			const mesh = nameToMesh.get(name);
+			if (!mesh) return { pos: new THREE.Vector3(0, 0, 0), target: new THREE.Vector3(0, 0, 0) };
+			const wp = new THREE.Vector3();
+			mesh.getWorldPosition(wp);
+			const up = new THREE.Vector3(0, 1, 0);
+			const altitude = 18; // visual altitude above planet center (in scene units)
+			const pos = wp.clone().addScaledVector(up, altitude);
+			const tangent = new THREE.Vector3(1, 0, 0); // slight forward to see horizon
+			const target = wp.clone().addScaledVector(tangent, 6);
+			return { pos, target };
+		};
+
+		const enterImmersive = (name: string) => {
+			const s = immersiveRef.current;
+			const { pos, target } = computeImmersiveTargets(name);
+			s.mode = 'toImmersive';
+			s.planetName = name;
+			s.t = 0;
+			s.startPos.copy(camera.position);
+			s.startTarget.copy(cameraTarget);
+			s.endPos.copy(pos);
+			s.endTarget.copy(target);
+			setImmersiveUiVisible(true);
+			paused = true;
+		};
+
+		const exitImmersive = () => {
+			const s = immersiveRef.current;
+			s.mode = 'toSystem';
+			s.t = 0;
+			s.startPos.copy(camera.position);
+			s.startTarget.copy(cameraTarget);
+			// Return to base system view
+			const basePos = new THREE.Vector3(parallax.x * 20, 200 + parallax.y * 10, 320);
+			s.endPos.copy(basePos);
+			s.endTarget.set(0, 0, 0);
+			setImmersiveUiVisible(false);
+		};
 		const animate = () => {
 			const nowMs = performance.now();
 			const deltaSec = (nowMs - prevMs) / 1000;
@@ -252,11 +444,34 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 				planetMeshes[idx].position.set(x, 0, z);
 			});
 
+			// Keep starfield centered on camera to avoid parallax translation
+			starGroup.position.copy(camera.position);
+
 			// Camera targeting and zoom/focus
 			const basePos = new THREE.Vector3(parallax.x * 20, 200 + parallax.y * 10, 320);
 			let desiredTarget = new THREE.Vector3(0, 0, 0);
 			let desiredPos = basePos.clone();
-			if (focusName) {
+			const s = immersiveRef.current;
+			if (s.mode === 'toImmersive') {
+				s.t = Math.min(1, s.t + (deltaSec / s.duration));
+				const k = easeInOutCubic(s.t);
+				desiredPos.copy(s.startPos).lerp(s.endPos, k);
+				desiredTarget.copy(s.startTarget).lerp(s.endTarget, k);
+				if (s.t >= 1) { s.mode = 'immersive'; }
+			} else if (s.mode === 'immersive') {
+				// Follow planet during immersive
+				if (s.planetName) {
+					const { pos, target } = computeImmersiveTargets(s.planetName);
+					desiredPos.copy(pos);
+					desiredTarget.copy(target);
+				}
+			} else if (s.mode === 'toSystem') {
+				s.t = Math.min(1, s.t + (deltaSec / s.duration));
+				const k = easeInOutCubic(s.t);
+				desiredPos.copy(s.startPos).lerp(s.endPos, k);
+				desiredTarget.copy(s.startTarget).lerp(s.endTarget, k);
+				if (s.t >= 1) { s.mode = 'system'; paused = false; s.planetName = null; }
+			} else if (focusName) {
 				const mesh = nameToMesh.get(focusName);
 				if (mesh) {
 					const wp = new THREE.Vector3();
@@ -279,8 +494,8 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 				}
 			}
 			// Smoothly approach desired camera position and target
-			camera.position.lerp(desiredPos, 0.08);
-			cameraTarget.lerp(desiredTarget, 0.1);
+			camera.position.lerp(desiredPos, 0.12);
+			cameraTarget.lerp(desiredTarget, 0.14);
 			camera.lookAt(cameraTarget);
 
 			renderer.render(scene, camera);
@@ -369,8 +584,13 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 		};
 		const onKeyDown = (e: KeyboardEvent) => {
 			if (e.key === 'Escape') {
-				focusName = null;
-				setSelected(null);
+				const s = immersiveRef.current;
+				if (s.mode === 'immersive' || s.mode === 'toImmersive') {
+					exitImmersive();
+				} else {
+					focusName = null;
+					setSelected(null);
+				}
 			}
 		};
 		window.addEventListener('pointerdown', onPointerDown, { capture: true, passive: true } as AddEventListenerOptions);
@@ -394,6 +614,14 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 			});
 			glowTexture.dispose();
 		};
+
+		// Expose controls for integration/tests (no global typing changes)
+		if (containerRef.current) {
+			// @ts-ignore
+			(containerRef.current as any).__enterImmersive = enterImmersive;
+			// @ts-ignore
+			(containerRef.current as any).__exitImmersive = exitImmersive;
+		}
 
 		return () => disposeRef.current();
 	}, []);
@@ -419,8 +647,36 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 						planet={selected}
 						onClose={() => setSelected(null)}
 					/>
+					<div className="mt-2 flex gap-2">
+						<button
+							className="px-2 py-1 text-xs rounded bg-slate-800 border border-slate-700 hover:bg-slate-700"
+							onClick={() => {
+								if (selected) {
+									// eslint-disable-next-line no-console
+									console.log('[SolarSystemBg] enter immersive', selected.name);
+									// @ts-ignore
+									enterImmersive(selected.name);
+								}
+							}}
+						>
+							Enter immersive
+						</button>
+					</div>
 				</div>,
 				document.body
+			)}
+			{immersiveUiVisible && (
+				<div className="fixed top-4 right-4 z-50 pointer-events-auto">
+					<button
+						className="px-3 py-1 text-xs rounded bg-slate-800/90 border border-slate-700 hover:bg-slate-700"
+						onClick={() => {
+							// @ts-ignore
+							exitImmersive();
+						}}
+					>
+						Exit immersive
+					</button>
+				</div>
 			)}
 		</div>
 	);
