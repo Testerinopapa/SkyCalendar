@@ -101,6 +101,7 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 	const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
 	const [cardPos, setCardPos] = useState<{ x: number; y: number } | null>(null);
 	const [immersiveUiVisible, setImmersiveUiVisible] = useState<boolean>(false);
+	const [groundOcclusion, setGroundOcclusion] = useState<number>(0);
 	const buttonsContainerRef = useRef<HTMLDivElement | null>(null);
 	const planetButtonMapRef = useRef<Map<string, HTMLButtonElement>>(new Map());
 	const uiOverlayRef = useRef<HTMLDivElement | null>(null);
@@ -421,7 +422,7 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 			const north = new THREE.Vector3().crossVectors(r, east).normalize();
 			// Scale offsets by visual radius for consistent feel across planets
 			// Phase 1: near-surface, first-person along horizon
-			const nearHeight = Math.max(planetRadius * 0.08, 0.8);
+			const nearHeight = Math.max(planetRadius * 0.05, 0.5);
 			const nearSide = 0; // stand on local point
 			const nearLook = planetRadius * 3.0;
 			const endHeight = Math.max(planetRadius * 8, 28);
@@ -565,11 +566,14 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 				const altitude = camera.position.distanceTo(s2.planetCenter) - s2.planetRadius;
 				const fade = THREE.MathUtils.smoothstep(altitude, 0, s2.planetRadius * 3);
 				adjustStarOpacity(fade);
+				setGroundOcclusion(1 - THREE.MathUtils.smoothstep(altitude, 0, s2.planetRadius * 0.8));
 			} else if (immersiveRef.current.mode === 'toSystem') {
 				const k = immersiveRef.current.t;
 				adjustStarOpacity(THREE.MathUtils.lerp(0.6, 1, k));
+				setGroundOcclusion(THREE.MathUtils.lerp(0.2, 0, k));
 			} else {
 				adjustStarOpacity(1);
+				setGroundOcclusion(0);
 			}
 
 			renderer.render(scene, camera);
@@ -751,6 +755,16 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 						Exit immersive
 					</button>
 				</div>
+			)}
+			{(immersiveUiVisible || groundOcclusion > 0.001) && (
+				<div
+					className="pointer-events-none fixed inset-0 z-40"
+					style={{
+						background: `linear-gradient(to top, rgba(2,6,23,${0.85 * groundOcclusion}), rgba(2,6,23,0) 35%)`,
+						transition: 'opacity 200ms ease',
+						opacity: groundOcclusion,
+					}}
+				/>
 			)}
 		</div>
 	);
