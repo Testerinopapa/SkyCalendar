@@ -19,6 +19,8 @@ export default function PlanetInfoCard({ planet, onClose, className }: { planet:
 	const [showDetails, setShowDetails] = useState<boolean>(false);
 	const [showWeather, setShowWeather] = useState<boolean>(false);
 	const [showAstronomy, setShowAstronomy] = useState<boolean>(false);
+	const [weatherLoading, setWeatherLoading] = useState(false);
+	const [astroLoading, setAstroLoading] = useState(false);
 	const [weatherCount, setWeatherCount] = useState<number | null>(null);
 	const [astroSummary, setAstroSummary] = useState<string | null>(null);
 
@@ -111,6 +113,7 @@ export default function PlanetInfoCard({ planet, onClose, className }: { planet:
 						: `${base} bg-slate-700 hover:bg-slate-500 text-slate-100 focus:ring-2 focus:ring-slate-400/60`;
 					return (
 						<button
+							data-testid="btn-space-data"
 							className={btnClass}
 							onClick={() => setShowDetails((v) => !v)}
 							aria-expanded={showDetails}
@@ -128,7 +131,7 @@ export default function PlanetInfoCard({ planet, onClose, className }: { planet:
 							? `${base} bg-amber-600 hover:bg-amber-500 text-white focus:ring-2 focus:ring-amber-400/60`
 							: `${base} bg-slate-700 hover:bg-slate-500 text-slate-100 focus:ring-2 focus:ring-slate-400/60`;
 						return (
-							<button className={cls} onClick={() => setShowWeather((v) => !v)} aria-expanded={showWeather}>
+							<button data-testid="btn-space-weather" className={cls} onClick={() => setShowWeather((v) => !v)} aria-expanded={showWeather}>
 								{showWeather ? "Hide space weather ▲" : `Space weather ▼${weatherCount !== null ? ` (${weatherCount})` : ''}`}
 							</button>
 						);
@@ -139,7 +142,7 @@ export default function PlanetInfoCard({ planet, onClose, className }: { planet:
 							? `${base} bg-cyan-600 hover:bg-cyan-500 text-white focus:ring-2 focus:ring-cyan-400/60`
 							: `${base} bg-slate-700 hover:bg-slate-500 text-slate-100 focus:ring-2 focus:ring-slate-400/60`;
 						return (
-							<button className={cls} onClick={() => setShowAstronomy((v) => !v)} aria-expanded={showAstronomy}>
+							<button data-testid="btn-astronomy" className={cls} onClick={() => setShowAstronomy((v) => !v)} aria-expanded={showAstronomy}>
 								{showAstronomy ? "Hide astronomy ▲" : `Astronomy ▼${astroSummary ? ` (${astroSummary})` : ''}`}
 							</button>
 						);
@@ -175,14 +178,14 @@ export default function PlanetInfoCard({ planet, onClose, className }: { planet:
 				{/* Independent sections controlled by their own buttons */}
 				{showWeather && (
 					<div className="mt-3 border-t border-slate-700/60 pt-2">
-						<div className="font-semibold text-xs mb-1">Space Weather</div>
-						<SpaceWeatherList />
+						<div data-testid="section-space-weather" className="font-semibold text-xs mb-1">Space Weather {weatherLoading ? <span className="opacity-70">(loading…)</span> : null}</div>
+						<SpaceWeatherList onLoadingChange={setWeatherLoading} />
 					</div>
 				)}
 				{showAstronomy && (
 					<div className="mt-3 border-t border-slate-700/60 pt-2">
-						<div className="font-semibold text-xs mb-1">Astronomy (your location)</div>
-						<AstronomyMini lat={37.7749} lon={-122.4194} />
+						<div data-testid="section-astronomy" className="font-semibold text-xs mb-1">Astronomy (New York) {astroLoading ? <span className="opacity-70">(loading…)</span> : null}</div>
+						<AstronomyMini lat={40.7128} lon={-74.0060} onLoadingChange={setAstroLoading} />
 					</div>
 				)}
 			</div>

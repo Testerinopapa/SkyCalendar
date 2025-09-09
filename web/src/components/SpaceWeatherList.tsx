@@ -13,12 +13,13 @@ type SpaceWeatherEvent = {
 	link?: string;
 };
 
-export default function SpaceWeatherList() {
+export default function SpaceWeatherList({ onLoadingChange }: { onLoadingChange?: (loading: boolean) => void } = {}) {
 	const [events, setEvents] = useState<SpaceWeatherEvent[] | null>(null);
 	const [error, setError] = useState<string | null>(null);
 
 	useEffect(() => {
 		let alive = true;
+		onLoadingChange?.(true);
 		fetch("/api/space-weather")
 			.then(async (r) => {
 				if (!alive) return;
@@ -26,7 +27,8 @@ export default function SpaceWeatherList() {
 				const data = await r.json();
 				setEvents(Array.isArray(data) ? data.slice(0, 6) : []);
 			})
-			.catch(() => alive && setError("Failed to load space weather"));
+			.catch(() => alive && setError("Failed to load space weather"))
+			.finally(() => alive && onLoadingChange?.(false));
 		return () => { alive = false };
 	}, []);
 

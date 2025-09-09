@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from "react";
 
-export default function AstronomyMini({ lat, lon }: { lat: number; lon: number }) {
+export default function AstronomyMini({ lat, lon, onLoadingChange }: { lat: number; lon: number; onLoadingChange?: (loading: boolean) => void }) {
 	const [data, setData] = useState<any | null>(null);
 	const [error, setError] = useState<string | null>(null);
 
 	useEffect(() => {
 		let alive = true;
 		const params = new URLSearchParams({ lat: String(lat), lon: String(lon) });
+		onLoadingChange?.(true);
 		fetch(`/api/astronomy?${params.toString()}`)
 			.then(async (r) => {
 				if (!alive) return;
@@ -16,7 +17,8 @@ export default function AstronomyMini({ lat, lon }: { lat: number; lon: number }
 				const d = await r.json();
 				setData(d);
 			})
-			.catch(() => alive && setError("Failed to load astronomy"));
+			.catch(() => alive && setError("Failed to load astronomy"))
+			.finally(() => alive && onLoadingChange?.(false));
 		return () => { alive = false };
 	}, [lat, lon]);
 
