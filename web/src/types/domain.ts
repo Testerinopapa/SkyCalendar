@@ -22,3 +22,18 @@ export type SpaceWeatherEvent = {
 	severity?: string;
 	link?: string;
 };
+
+export type PlanetDetail = {
+	name: string;
+	meanRadiusKm?: number;
+	massKg?: number;
+	gravity?: number; // m/s^2
+	density?: number; // g/cm^3
+	sideralRotationHours?: number;
+	sideralOrbitDays?: number;
+	perihelionKm?: number;
+	aphelionKm?: number;
+	discoveredBy?: string;
+	discoveryDate?: string;
+	source: string;
+};
