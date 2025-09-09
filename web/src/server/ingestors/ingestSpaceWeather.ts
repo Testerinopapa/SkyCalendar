@@ -2,13 +2,16 @@ import { donkiGet } from "@/server/providers/donki";
 import { normalizeFlares, normalizeCmes } from "@/server/normalizers/donki.normalize";
 import type { SpaceWeatherEvent } from "@/types/domain";
 
+function ymd(d: Date) {
+	return d.toISOString().slice(0, 10);
+}
+
 export async function ingestRecentSpaceWeather(): Promise<SpaceWeatherEvent[]> {
-	const now = new Date();
-	const start = new Date(now.getTime() - 7 * 86400000).toISOString().slice(0, 10); // last 7 days
-	const end = new Date(now.getTime() + 1 * 86400000).toISOString().slice(0, 10);
+	const endDate = new Date();
+	const startDate = new Date(endDate.getTime() - 3 * 86400000); // last 3 days for fresher data
 	const [flares, cmes] = await Promise.all([
-		donkiGet<any[]>("/FLR", { startDate: start, endDate: end }),
-		donkiGet<any[]>("/CME", { startDate: start, endDate: end }),
+		donkiGet<any[]>("/FLR", { startDate: ymd(startDate), endDate: ymd(endDate) }).catch(() => []),
+		donkiGet<any[]>("/CME", { startDate: ymd(startDate), endDate: ymd(endDate) }).catch(() => []),
 	]);
-	return [...normalizeFlares(flares), ...normalizeCmes(cmes)];
+	return [...normalizeFlares(flares || []), ...normalizeCmes(cmes || [])];
 }
