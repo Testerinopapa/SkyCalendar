@@ -115,6 +115,8 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 		startTarget: THREE.Vector3;
 		endPos: THREE.Vector3;
 		endTarget: THREE.Vector3;
+		savedSystemPos: THREE.Vector3;
+		savedSystemTarget: THREE.Vector3;
 	}>({
 		mode: 'system',
 		planetName: null,
@@ -124,6 +126,8 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 		startTarget: new THREE.Vector3(),
 		endPos: new THREE.Vector3(),
 		endTarget: new THREE.Vector3(),
+		savedSystemPos: new THREE.Vector3(),
+		savedSystemTarget: new THREE.Vector3(),
 	});
 
 	const easeInOutCubic = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
@@ -392,13 +396,25 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 		const computeImmersiveTargets = (name: string) => {
 			const mesh = nameToMesh.get(name);
 			if (!mesh) return { pos: new THREE.Vector3(0, 0, 0), target: new THREE.Vector3(0, 0, 0) };
+			const planetSpec = PLANETS.find(p => p.name === name);
+			const planetRadius = (planetSpec?.radiusPx ?? 5);
 			const wp = new THREE.Vector3();
 			mesh.getWorldPosition(wp);
-			const up = new THREE.Vector3(0, 1, 0);
-			const altitude = 18; // visual altitude above planet center (in scene units)
-			const pos = wp.clone().addScaledVector(up, altitude);
-			const tangent = new THREE.Vector3(1, 0, 0); // slight forward to see horizon
-			const target = wp.clone().addScaledVector(tangent, 6);
+			// Build a stable local frame based on radial direction from origin
+			const r = wp.clone().normalize();
+			const worldUp = new THREE.Vector3(0, 1, 0);
+			let east = new THREE.Vector3().crossVectors(worldUp, r);
+			if (east.lengthSq() < 1e-6) {
+				east = new THREE.Vector3().crossVectors(new THREE.Vector3(1, 0, 0), r);
+			}
+			east.normalize();
+			const north = new THREE.Vector3().crossVectors(r, east).normalize();
+			// Scale offsets by visual radius for consistent feel across planets
+			const height = Math.max(planetRadius * 8, 28);
+			const side = planetRadius * 2.5;
+			const lookAhead = planetRadius * 6;
+			const pos = wp.clone().addScaledVector(r, height).addScaledVector(north, 0.0).addScaledVector(east, -side);
+			const target = wp.clone().addScaledVector(east, lookAhead).addScaledVector(north, planetRadius * 0.6);
 			return { pos, target };
 		};
 
@@ -410,8 +426,13 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 			s.t = 0;
 			s.startPos.copy(camera.position);
 			s.startTarget.copy(cameraTarget);
+			s.savedSystemPos.copy(camera.position);
+			s.savedSystemTarget.copy(cameraTarget);
 			s.endPos.copy(pos);
 			s.endTarget.copy(target);
+			// Dynamic duration based on travel distance
+			const dist = s.startPos.distanceTo(s.endPos);
+			s.duration = THREE.MathUtils.clamp(dist * 0.004, 0.9, 2.2);
 			setImmersiveUiVisible(true);
 			paused = true;
 		};
@@ -422,10 +443,12 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 			s.t = 0;
 			s.startPos.copy(camera.position);
 			s.startTarget.copy(cameraTarget);
-			// Return to base system view
-			const basePos = new THREE.Vector3(parallax.x * 20, 200 + parallax.y * 10, 320);
-			s.endPos.copy(basePos);
-			s.endTarget.set(0, 0, 0);
+			// Return to previous system view
+			s.endPos.copy(s.savedSystemPos);
+			s.endTarget.copy(s.savedSystemTarget);
+			// Dynamic duration back
+			const dist = s.startPos.distanceTo(s.endPos);
+			s.duration = THREE.MathUtils.clamp(dist * 0.004, 0.8, 2.0);
 			setImmersiveUiVisible(false);
 		};
 		const animate = () => {
