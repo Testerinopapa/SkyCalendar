@@ -345,12 +345,12 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 		};
 
 		const onPointerDown = (e: PointerEvent) => {
-			if (isFromUiOverlay(e.target)) return; // ignore UI interactions
+			if (isFromUiOverlay(e.target)) { pointerDownName = null; return; } // ignore UI interactions and clear stale state
 			if (!isInside(e)) { pointerDownName = null; return; }
 			pointerDownName = hitTestAtEvent(e);
 		};
 		const onPointerUp = (e: PointerEvent) => {
-			if (isFromUiOverlay(e.target)) return; // ignore UI interactions
+			if (isFromUiOverlay(e.target)) { pointerDownName = null; return; } // ignore UI interactions and clear stale state
 			const upName = isInside(e) ? hitTestAtEvent(e) : null;
 			if (pointerDownName && upName && pointerDownName === upName) {
 				// eslint-disable-next-line no-console

@@ -35,7 +35,8 @@ export default function PlanetInfoCard({ planet, onClose, className }: { planet:
 					return;
 				}
 				const d = await r.json();
-				setDetails(d);
+				// Only set details if payload seems non-empty, else keep null to show loading/dashes
+				if (d && (d.meanRadiusKm || d.massKg || d.gravity || d.density)) setDetails(d);
 			})
 			.catch(() => alive && setError("Failed to load details"));
 		return () => { alive = false };
