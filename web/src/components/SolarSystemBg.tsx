@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import * as THREE from "three";
 
 type PlanetSpec = {
@@ -15,15 +16,62 @@ const PLANETS: PlanetSpec[] = [
   { name: "Mercury", color: 0xb0b0b0, radiusPx: 2.5, orbitRadiusPx: 60, orbitalPeriodDays: 88 },
   { name: "Venus", color: 0xf5deb3, radiusPx: 3.5, orbitRadiusPx: 90, orbitalPeriodDays: 225 },
   { name: "Earth", color: 0x3b82f6, radiusPx: 4.0, orbitRadiusPx: 120, orbitalPeriodDays: 365 },
+  { name: "Mars", color: 0xff6b6b, radiusPx: 3.0, orbitRadiusPx: 160, orbitalPeriodDays: 687 },
+  { name: "Jupiter", color: 0xd1b48c, radiusPx: 7.0, orbitRadiusPx: 220, orbitalPeriodDays: 4333 },
+  { name: "Saturn", color: 0xdcc9a6, radiusPx: 6.0, orbitRadiusPx: 280, orbitalPeriodDays: 10759 },
+  { name: "Uranus", color: 0x7dd3fc, radiusPx: 5.0, orbitRadiusPx: 340, orbitalPeriodDays: 30688 },
+  { name: "Neptune", color: 0x60a5fa, radiusPx: 5.0, orbitRadiusPx: 400, orbitalPeriodDays: 60182 },
 ];
 
 // 1 real second equals this many simulated days
 const SIM_DAYS_PER_SECOND = 8;
+const ENABLE_OVERLAY_BUTTONS = false;
+
+function createGlowTexture(): THREE.Texture {
+  const size = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  g.addColorStop(0.0, 'rgba(255,255,255,0.9)');
+  g.addColorStop(0.3, 'rgba(255,255,255,0.5)');
+  g.addColorStop(0.7, 'rgba(255,255,255,0.15)');
+  g.addColorStop(1.0, 'rgba(255,255,255,0.0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.anisotropy = 1;
+  tex.needsUpdate = true;
+  return tex;
+}
 
 export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'medium' | 'high' }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const disposeRef = useRef<() => void>(() => {});
   const [selected, setSelected] = useState<PlanetSpec | null>(null);
+  const [hoveredName, setHoveredName] = useState<string | null>(null);
+  const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
+  const buttonsContainerRef = useRef<HTMLDivElement | null>(null);
+  const planetButtonMapRef = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const router = useRouter();
+
+  const logPlanetClick = (planetName: string) => {
+    try {
+      const payload = JSON.stringify({ type: 'planet_click', name: planetName, ts: new Date().toISOString() });
+      if (navigator.sendBeacon) {
+        const blob = new Blob([payload], { type: 'application/json' });
+        navigator.sendBeacon('/api/debug/log', blob);
+      } else {
+        fetch('/api/debug/log', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: payload,
+          keepalive: true,
+        }).catch(() => {});
+      }
+    } catch {}
+  };
 
   useEffect(() => {
     const container = containerRef.current;
@@ -51,14 +99,55 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
     resize();
     window.addEventListener("resize", resize);
 
-    // Mouse parallax
+    // Mouse parallax + hover pick
     const parallax = { x: 0, y: 0 };
+    const raycaster = new THREE.Raycaster();
+    const mouseNdc = new THREE.Vector2();
+    let currentHovered: string | null = null;
+    const nameToGlow = new Map<string, THREE.Sprite>();
+    const updateGlow = (nm: string | null) => {
+      nameToGlow.forEach((sprite, name) => {
+        const mat = sprite.material as THREE.SpriteMaterial;
+        mat.opacity = nm && nm === name ? 0.85 : 0.0;
+      });
+    };
     const onMouse = (e: MouseEvent) => {
       const rect = container.getBoundingClientRect();
       const nx = (e.clientX - rect.left) / rect.width - 0.5;
       const ny = (e.clientY - rect.top) / rect.height - 0.5;
       parallax.x = nx;
       parallax.y = ny;
+
+      // Hover pick via raycaster
+      mouseNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      mouseNdc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(mouseNdc, camera);
+      const hits = raycaster.intersectObjects(hitMeshes.length ? hitMeshes : planetMeshes, false);
+      if (hits.length > 0) {
+        const o = hits[0].object as THREE.Mesh;
+        const nm = o.name || (o.parent ? o.parent.name : "");
+        setHoveredName(nm || null);
+        const wp = new THREE.Vector3();
+        const posMesh = (nm && nameToMesh.get(nm)) || o;
+        posMesh.getWorldPosition(wp);
+        wp.project(camera);
+        const sx = (wp.x * 0.5 + 0.5) * rect.width;
+        const sy = (-wp.y * 0.5 + 0.5) * rect.height;
+        setHoverPos({ x: sx, y: sy - 14 });
+        container.style.cursor = 'pointer';
+        if (nm !== currentHovered) {
+          currentHovered = nm || null;
+          updateGlow(currentHovered);
+        }
+      } else {
+        setHoveredName(null);
+        setHoverPos(null);
+        container.style.cursor = 'auto';
+        if (currentHovered !== null) {
+          currentHovered = null;
+          updateGlow(null);
+        }
+      }
     };
     window.addEventListener("mousemove", onMouse);
 
@@ -67,11 +156,14 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
       new THREE.SphereGeometry(10, 48, 48),
       new THREE.MeshBasicMaterial({ color: 0xffc107 })
     );
+    sun.name = 'Sun';
     scene.add(sun);
 
     // Orbits and planets
     const planetMeshes: THREE.Mesh[] = [];
+    const hitMeshes: THREE.Mesh[] = [];
     const nameToMesh = new Map<string, THREE.Mesh>();
+    const glowTexture = createGlowTexture();
     PLANETS.forEach((p) => {
       const orbitGeo = new THREE.RingGeometry(p.orbitRadiusPx - 0.2, p.orbitRadiusPx + 0.2, 256);
       const orbitMat = new THREE.MeshBasicMaterial({ color: 0x334155, side: THREE.DoubleSide, transparent: true, opacity: 0.6 });
@@ -87,6 +179,55 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
       scene.add(planet);
       planetMeshes.push(planet);
       nameToMesh.set(p.name, planet);
+
+      // Invisible larger hit-sphere for easier picking
+      const hit = new THREE.Mesh(
+        new THREE.SphereGeometry(p.radiusPx + 10, 16, 16),
+        new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
+      );
+      hit.name = p.name;
+      planet.add(hit);
+      hitMeshes.push(hit);
+
+      // Additive glow sprite (initially hidden)
+      const glow = new THREE.Sprite(
+        new THREE.SpriteMaterial({
+          map: glowTexture,
+          color: p.color,
+          transparent: true,
+          opacity: 0.0,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        })
+      );
+      glow.scale.set(p.radiusPx * 6, p.radiusPx * 6, 1);
+      planet.add(glow);
+      nameToGlow.set(p.name, glow);
+
+      // Create invisible clickable DOM button overlay for accessibility (disabled to avoid moving targets)
+      if (ENABLE_OVERLAY_BUTTONS && buttonsContainerRef.current) {
+        const btn = document.createElement('button');
+        btn.setAttribute('aria-label', `Select ${p.name}`);
+        btn.style.position = 'absolute';
+        btn.style.width = '28px';
+        btn.style.height = '28px';
+        btn.style.left = '0px';
+        btn.style.top = '0px';
+        btn.style.transform = 'translate(-50%, -50%)';
+        btn.style.border = 'none';
+        btn.style.background = 'transparent';
+        btn.style.opacity = '0';
+        btn.style.cursor = 'pointer';
+        btn.style.pointerEvents = 'auto';
+        btn.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          logPlanetClick(p.name);
+          const slug = encodeURIComponent(p.name.toLowerCase());
+          router.push(`/planets/${slug}`);
+        });
+        buttonsContainerRef.current.appendChild(btn);
+        planetButtonMapRef.current.set(p.name, btn);
+      }
     });
 
     // Starfield (GPU friendly)
@@ -108,6 +249,7 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 
     let raf = 0;
     const startMs = performance.now();
+    let focusName: string | null = null;
     const animate = () => {
       const nowMs = performance.now();
       const elapsedSec = (nowMs - startMs) / 1000;
@@ -120,41 +262,101 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
         planetMeshes[idx].position.set(x, 0, z);
       });
 
-      // subtle parallax
-      camera.position.x = parallax.x * 20;
-      camera.position.y = 200 + parallax.y * 10;
+      // Camera targeting and zoom/focus
+      const basePos = new THREE.Vector3(parallax.x * 20, 200 + parallax.y * 10, 320);
+      let desiredTarget = new THREE.Vector3(0, 0, 0);
+      let desiredPos = basePos.clone();
+      if (focusName) {
+        const mesh = nameToMesh.get(focusName);
+        if (mesh) {
+          const wp = new THREE.Vector3();
+          mesh.getWorldPosition(wp);
+          desiredTarget.copy(wp);
+          // Focus offset with gentle parallax
+          const offset = new THREE.Vector3(parallax.x * 10, 25 + parallax.y * 5, 60);
+          desiredPos.copy(wp).add(offset);
+        }
+      }
+      // Smoothly approach desired camera position and target
+      camera.position.lerp(desiredPos, 0.08);
+      cameraTarget.lerp(desiredTarget, 0.1);
       camera.lookAt(cameraTarget);
 
       renderer.render(scene, camera);
+      // Update DOM button positions each frame (only if enabled)
+      if (ENABLE_OVERLAY_BUTTONS && buttonsContainerRef.current) {
+        const rect = container.getBoundingClientRect();
+        PLANETS.forEach((p) => {
+          const mesh = nameToMesh.get(p.name);
+          const btn = planetButtonMapRef.current.get(p.name);
+          if (mesh && btn) {
+            const wp = new THREE.Vector3();
+            mesh.getWorldPosition(wp);
+            wp.project(camera);
+            const sx = (wp.x * 0.5 + 0.5) * rect.width;
+            const sy = (-wp.y * 0.5 + 0.5) * rect.height;
+            btn.style.left = `${sx}px`;
+            btn.style.top = `${sy}px`;
+          }
+        });
+      }
       raf = requestAnimationFrame(animate);
     };
     raf = requestAnimationFrame(animate);
 
-    // Click-to-select using simple hit test in screen space (approximate)
-    const onClick = (e: MouseEvent) => {
+    // Pointer gating: only navigate if target is consistent between down and up
+    let pointerDownName: string | null = null;
+    const hitTestAtEvent = (e: PointerEvent): string | null => {
       const rect = container.getBoundingClientRect();
-      const mx = e.clientX - rect.left - rect.width / 2;
-      const my = e.clientY - rect.top - rect.height / 2;
-      let hit: string | null = null;
-      for (const p of PLANETS) {
-        const mesh = nameToMesh.get(p.name)!;
-        const dx = mx - mesh.position.x;
-        const dy = my - mesh.position.y;
-        const r = p.radiusPx + 6;
-        if (dx * dx + dy * dy <= r * r) {
-          hit = p.name;
-          break;
-        }
+      if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
+        return null;
       }
-      if (hit) {
-        const planet = PLANETS.find((pp) => pp.name === hit) || null;
-        // React state update outside of RAF
+      mouseNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      mouseNdc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(mouseNdc, camera);
+      let hit: string | null = null;
+      const rayHits = raycaster.intersectObjects(hitMeshes.length ? hitMeshes : planetMeshes, true);
+      if (rayHits.length > 0) {
+        const obj = rayHits[0].object as THREE.Object3D;
+        hit = obj.name || (obj.parent ? obj.parent.name : null);
+      }
+      if (!hit) {
+        const mx = e.clientX - rect.left - rect.width / 2;
+        const my = e.clientY - rect.top - rect.height / 2;
+        let bestName: string | null = null;
+        let bestDist = Infinity;
+        for (const p of PLANETS) {
+          const mesh = nameToMesh.get(p.name)!;
+          const dx = mx - mesh.position.x;
+          const dy = my - mesh.position.y;
+        const r = p.radiusPx + 10;
+          const d2 = dx * dx + dy * dy;
+          if (d2 <= r * r && d2 < bestDist) { bestName = p.name; bestDist = d2; }
+        }
+        hit = bestName;
+      }
+      return hit;
+    };
+    const onPointerDown = (e: PointerEvent) => {
+      pointerDownName = hitTestAtEvent(e);
+    };
+    const onPointerUp = (e: PointerEvent) => {
+      const upName = hitTestAtEvent(e);
+      if (pointerDownName && upName && pointerDownName === upName) {
+        // eslint-disable-next-line no-console
+        console.log('[SolarSystemBg] focus', upName);
+        logPlanetClick(String(upName));
+        focusName = String(upName);
+        const planet = PLANETS.find(pp => pp.name === focusName) || null;
         setSelected(planet || null);
       } else {
+        focusName = null;
         setSelected(null);
       }
+      pointerDownName = null;
     };
-    container.addEventListener('click', onClick);
+    window.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('pointerup', onPointerUp);
 
     disposeRef.current = () => {
       cancelAnimationFrame(raf);
@@ -162,13 +364,15 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
       window.removeEventListener("mousemove", onMouse);
       renderer.dispose();
       container.removeChild(renderer.domElement);
-      container.removeEventListener('click', onClick);
+      window.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('pointerup', onPointerUp);
       scene.traverse((obj) => {
         const mesh = obj as THREE.Mesh;
         if (mesh.geometry) mesh.geometry.dispose?.();
         // @ts-ignore
         if (mesh.material && mesh.material.dispose) mesh.material.dispose();
       });
+      glowTexture.dispose();
     };
 
     return () => disposeRef.current();
@@ -176,6 +380,15 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 
   return (
     <div ref={containerRef} className="absolute inset-0 z-0">
+      <div ref={buttonsContainerRef} className="absolute inset-0 z-20 pointer-events-none" />
+      {hoveredName && hoverPos && (
+        <div
+          className="absolute z-20 text-xs px-2 py-1 rounded bg-slate-900/90 border border-slate-700/70 text-slate-200 pointer-events-none"
+          style={{ left: `${hoverPos.x}px`, top: `${hoverPos.y}px`, transform: 'translate(-50%, -100%)' }}
+        >
+          {hoveredName}
+        </div>
+      )}
       {selected && (
         <div className="absolute bottom-6 left-6 bg-slate-800/90 border border-slate-700/60 rounded-lg p-3 text-sm text-slate-200 max-w-xs z-10">
           <div className="font-semibold mb-1">{selected.name}</div>

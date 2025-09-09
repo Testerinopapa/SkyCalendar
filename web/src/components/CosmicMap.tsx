@@ -39,7 +39,7 @@ export default function CosmicMap() {
   }, []);
 
   return (
-    <div ref={containerRef} id="cosmic-map" className="w-full h-full relative">
+    <div ref={containerRef} id="cosmic-map" className="w-full h-full relative pointer-events-none">
       {events.map((event) => {
         const color = typeToColor[event.type] || "text-slate-300";
         const left = center.x + (event.positionX ?? 0);
@@ -50,8 +50,8 @@ export default function CosmicMap() {
             className={`event-node absolute cursor-pointer ${color}`}
             style={{ left: `${left}px`, top: `${top}px` }}
           >
-            <div className="w-4 h-4 rounded-full bg-current" />
-            <div className="event-tooltip absolute left-full ml-2 p-4 rounded-lg w-64 hidden">
+            <div className="w-4 h-4 rounded-full bg-current pointer-events-none" />
+            <div className="event-tooltip absolute left-full ml-2 p-4 rounded-lg w-64 hidden pointer-events-auto">
               <h3 className="font-bold text-lg">{event.title}</h3>
               <p className="text-sm opacity-80">
                 {new Date(event.startAt).toLocaleDateString("en-US", {
@@ -63,7 +63,7 @@ export default function CosmicMap() {
               {event.visibility ? (
                 <p className="text-xs mt-2">Visible: {event.visibility}</p>
               ) : null}
-              <button className={`mt-3 px-3 py-1 rounded text-xs hover:opacity-80 transition ${color.replace("text", "bg")}`}>
+              <button className={`mt-3 px-3 py-1 rounded text-xs hover:opacity-80 transition pointer-events-auto ${color.replace("text", "bg")}`}>
                 Set Reminder
               </button>
             </div>
