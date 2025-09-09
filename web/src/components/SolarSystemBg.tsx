@@ -113,10 +113,14 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 		duration: number;
 		startPos: THREE.Vector3;
 		startTarget: THREE.Vector3;
+		midPos: THREE.Vector3;
+		midTarget: THREE.Vector3;
 		endPos: THREE.Vector3;
 		endTarget: THREE.Vector3;
 		savedSystemPos: THREE.Vector3;
 		savedSystemTarget: THREE.Vector3;
+		planetCenter: THREE.Vector3;
+		planetRadius: number;
 	}>({
 		mode: 'system',
 		planetName: null,
@@ -124,10 +128,14 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 		duration: 1.6,
 		startPos: new THREE.Vector3(),
 		startTarget: new THREE.Vector3(),
+		midPos: new THREE.Vector3(),
+		midTarget: new THREE.Vector3(),
 		endPos: new THREE.Vector3(),
 		endTarget: new THREE.Vector3(),
 		savedSystemPos: new THREE.Vector3(),
 		savedSystemTarget: new THREE.Vector3(),
+		planetCenter: new THREE.Vector3(),
+		planetRadius: 5,
 	});
 
 	const easeInOutCubic = (x: number) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
@@ -410,17 +418,24 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 			east.normalize();
 			const north = new THREE.Vector3().crossVectors(r, east).normalize();
 			// Scale offsets by visual radius for consistent feel across planets
-			const height = Math.max(planetRadius * 8, 28);
-			const side = planetRadius * 2.5;
-			const lookAhead = planetRadius * 6;
-			const pos = wp.clone().addScaledVector(r, height).addScaledVector(north, 0.0).addScaledVector(east, -side);
-			const target = wp.clone().addScaledVector(east, lookAhead).addScaledVector(north, planetRadius * 0.6);
-			return { pos, target };
+			const nearHeight = planetRadius * 1.4; // near-atmosphere
+			const nearSide = planetRadius * 1.2;
+			const nearLook = planetRadius * 2.5;
+			const endHeight = Math.max(planetRadius * 8, 28);
+			const endSide = planetRadius * 2.2;
+			const endLook = planetRadius * 6.5;
+			const nearPos = wp.clone().addScaledVector(r, nearHeight).addScaledVector(east, -nearSide);
+			const nearTarget = wp.clone().addScaledVector(east, nearLook).addScaledVector(north, planetRadius * 0.4);
+			const endPos = wp.clone().addScaledVector(r, endHeight).addScaledVector(east, -endSide);
+			const endTarget = wp.clone().addScaledVector(east, endLook).addScaledVector(north, planetRadius * 0.6);
+			return { nearPos, nearTarget, endPos, endTarget, center: wp, radius: planetRadius } as const;
 		};
 
 		const enterImmersive = (name: string) => {
 			const s = immersiveRef.current;
-			const { pos, target } = computeImmersiveTargets(name);
+			const path = computeImmersiveTargets(name) as unknown as {
+				nearPos: THREE.Vector3; nearTarget: THREE.Vector3; endPos: THREE.Vector3; endTarget: THREE.Vector3; center: THREE.Vector3; radius: number
+			};
 			s.mode = 'toImmersive';
 			s.planetName = name;
 			s.t = 0;
@@ -428,10 +443,14 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 			s.startTarget.copy(cameraTarget);
 			s.savedSystemPos.copy(camera.position);
 			s.savedSystemTarget.copy(cameraTarget);
-			s.endPos.copy(pos);
-			s.endTarget.copy(target);
+			s.midPos.copy(path.nearPos);
+			s.midTarget.copy(path.nearTarget);
+			s.endPos.copy(path.endPos);
+			s.endTarget.copy(path.endTarget);
+			s.planetCenter.copy(path.center);
+			s.planetRadius = path.radius;
 			// Dynamic duration based on travel distance
-			const dist = s.startPos.distanceTo(s.endPos);
+			const dist = s.startPos.distanceTo(s.midPos) + s.midPos.distanceTo(s.endPos);
 			s.duration = THREE.MathUtils.clamp(dist * 0.004, 0.9, 2.2);
 			setImmersiveUiVisible(true);
 			paused = true;
@@ -478,15 +497,23 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 			if (s.mode === 'toImmersive') {
 				s.t = Math.min(1, s.t + (deltaSec / s.duration));
 				const k = easeInOutCubic(s.t);
-				desiredPos.copy(s.startPos).lerp(s.endPos, k);
-				desiredTarget.copy(s.startTarget).lerp(s.endTarget, k);
+				const split = 0.45;
+				if (k < split) {
+					const k1 = k / split;
+					desiredPos.copy(s.startPos).lerp(s.midPos, easeInOutCubic(k1));
+					desiredTarget.copy(s.startTarget).lerp(s.midTarget, easeInOutCubic(k1));
+				} else {
+					const k2 = (k - split) / (1 - split);
+					desiredPos.copy(s.midPos).lerp(s.endPos, easeInOutCubic(k2));
+					desiredTarget.copy(s.midTarget).lerp(s.endTarget, easeInOutCubic(k2));
+				}
 				if (s.t >= 1) { s.mode = 'immersive'; }
 			} else if (s.mode === 'immersive') {
 				// Follow planet during immersive
 				if (s.planetName) {
-					const { pos, target } = computeImmersiveTargets(s.planetName);
-					desiredPos.copy(pos);
-					desiredTarget.copy(target);
+					const path = computeImmersiveTargets(s.planetName) as unknown as { endPos: THREE.Vector3; endTarget: THREE.Vector3 };
+					desiredPos.copy(path.endPos);
+					desiredTarget.copy(path.endTarget);
 				}
 			} else if (s.mode === 'toSystem') {
 				s.t = Math.min(1, s.t + (deltaSec / s.duration));
@@ -520,6 +547,27 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 			camera.position.lerp(desiredPos, 0.12);
 			cameraTarget.lerp(desiredTarget, 0.14);
 			camera.lookAt(cameraTarget);
+
+			// Star fade based on altitude when near/inside atmosphere
+			const adjustStarOpacity = (factor: number) => {
+				const f = THREE.MathUtils.clamp(factor, 0.05, 1);
+				starGroup.children.forEach((child) => {
+					const pts = child as THREE.Points;
+					const mat = pts.material as THREE.PointsMaterial;
+					mat.opacity = 0.95 * f;
+				});
+			};
+			if (immersiveRef.current.mode === 'toImmersive' || immersiveRef.current.mode === 'immersive') {
+				const s2 = immersiveRef.current;
+				const altitude = camera.position.distanceTo(s2.planetCenter) - s2.planetRadius;
+				const fade = THREE.MathUtils.smoothstep(altitude, 0, s2.planetRadius * 3);
+				adjustStarOpacity(fade);
+			} else if (immersiveRef.current.mode === 'toSystem') {
+				const k = immersiveRef.current.t;
+				adjustStarOpacity(THREE.MathUtils.lerp(0.6, 1, k));
+			} else {
+				adjustStarOpacity(1);
+			}
 
 			renderer.render(scene, camera);
 			// Update DOM button positions each frame (only if enabled)
