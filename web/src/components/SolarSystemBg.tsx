@@ -218,6 +218,13 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 		sun.name = 'Sun';
 		scene.add(sun);
 
+		// Basic lighting: directional from Sun + faint ambient
+		const sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
+		sunLight.position.set(0, 0, 0);
+		sun.add(sunLight);
+		const ambient = new THREE.AmbientLight(0xffffff, 0.12);
+		scene.add(ambient);
+
 		// Orbits and planets
 		const planetMeshes: THREE.Mesh[] = [];
 		const orbitMeshes: THREE.Mesh[] = [];
@@ -235,14 +242,23 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 			scene.add(orbit);
 			orbitMeshes.push(orbit);
 
-			const planet = new THREE.Mesh(
-				new THREE.SphereGeometry(p.radiusPx, 32, 32),
-				new THREE.MeshBasicMaterial({ color: p.color })
-			);
+			const isEarth = p.name === 'Earth';
+			const planetMat = isEarth
+				? new THREE.MeshStandardMaterial({ color: p.color, roughness: 0.8, metalness: 0.0 })
+				: new THREE.MeshBasicMaterial({ color: p.color });
+			const planet = new THREE.Mesh(new THREE.SphereGeometry(p.radiusPx, 32, 32), planetMat);
 			planet.name = p.name;
 			scene.add(planet);
 			planetMeshes.push(planet);
 			nameToMesh.set(p.name, planet);
+
+			// Simple atmosphere shell for Earth
+			if (isEarth) {
+				const atmoGeo = new THREE.SphereGeometry(p.radiusPx * 1.05, 32, 32);
+				const atmoMat = new THREE.MeshBasicMaterial({ color: 0x6cb2eb, transparent: true, opacity: 0.15, blending: THREE.AdditiveBlending, depthWrite: false });
+				const atmo = new THREE.Mesh(atmoGeo, atmoMat);
+				planet.add(atmo);
+			}
 
 			// Invisible larger hit-sphere for easier picking
 			const hit = new THREE.Mesh(
