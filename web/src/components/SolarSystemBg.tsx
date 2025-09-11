@@ -138,6 +138,9 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 
 		const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 		renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+		renderer.outputColorSpace = (THREE as any).SRGBColorSpace || (THREE as any).sRGBEncoding;
+		renderer.toneMapping = THREE.ACESFilmicToneMapping;
+		renderer.toneMappingExposure = 1.0;
 		container.appendChild(renderer.domElement);
 
 		// Perspective camera with slight tilt for depth
@@ -218,8 +221,8 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 		sun.name = 'Sun';
 		scene.add(sun);
 
-		// Basic lighting: directional from Sun + faint ambient
-		const sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
+		// Basic lighting: point light at Sun + faint ambient
+		const sunLight = new THREE.PointLight(0xffffff, 2.0, 8000, 2);
 		sunLight.position.set(0, 0, 0);
 		sun.add(sunLight);
 		const ambient = new THREE.AmbientLight(0xffffff, 0.12);
@@ -263,6 +266,7 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 						tex.colorSpace = THREE.SRGBColorSpace as any;
 						tex.anisotropy = 2;
 						(planet.material as THREE.MeshStandardMaterial).map = tex;
+						(planet.material as THREE.MeshStandardMaterial).color.set(0xffffff);
 						(planet.material as THREE.MeshStandardMaterial).needsUpdate = true;
 					},
 					undefined,
