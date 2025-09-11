@@ -127,17 +127,17 @@ export default class FlightController {
 
     const nearHeight = Math.max(radius * 0.015, 0.2);
     const nearLook = radius * 2.2;
-    // End: zoom into the planet's center
-    const endHeight = Math.max(radius * 0.02, 0.2); // very close to center along poleUp
-    const endSide = 0.0; // no lateral offset at end
-    const endLook = radius * 0.5; // small forward vector not really used since we look at center
+    // End: settle on the northern hemisphere slightly above the surface, looking up into space
+    const endEye = Math.max(radius * 0.05, 0.5); // eye height above surface
+    const endLookUp = radius * 4.0; // look distance upward into space
 
     this.midPos.copy(center).addScaledVector(poleUp, nearHeight);
     this.midTarget.copy(this.midPos).addScaledVector(east, nearLook).addScaledVector(poleUp, -radius * 0.25);
 
-    this.endPos.copy(center).addScaledVector(poleUp, endHeight);
-    // Look directly at the center to create a true "into the planet" zoom
-    this.endTarget.copy(center);
+    // Camera at surface + eye height on the north pole
+    this.endPos.copy(center).addScaledVector(poleUp, radius + endEye);
+    // Look up into space from that point (away from planet)
+    this.endTarget.copy(this.endPos).addScaledVector(poleUp, endLookUp);
   }
 
   private easeInOutCubic(x: number) {
