@@ -146,16 +146,8 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 		const cameraTarget = new THREE.Vector3(0, 0, 0);
 		camera.lookAt(cameraTarget);
 
-		// Initialize flight controller
-		const getPlanetInfo = (planetName: string) => {
-			const mesh = nameToMesh.get(planetName);
-			if (!mesh) return null as any;
-			const center = new THREE.Vector3();
-			mesh.getWorldPosition(center);
-			const spec = PLANETS.find(p => p.name === planetName);
-			return { center, radius: (spec?.radiusPx ?? 5) };
-		};
-		flightRef.current = new FlightController(getPlanetInfo);
+		// Defer flight controller wiring until meshes are ready (set after planet creation below)
+		let getPlanetInfo: (planetName: string) => { center: THREE.Vector3; radius: number } | null = () => null;
 
 		const resize = () => {
 			const { clientWidth: w, clientHeight: h } = container;
@@ -276,6 +268,17 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 			planet.add(glow);
 			nameToGlow.set(p.name, glow);
 		});
+
+		// Initialize flight controller now that meshes exist
+		getPlanetInfo = (planetName: string) => {
+			const mesh = nameToMesh.get(planetName);
+			if (!mesh) return null;
+			const center = new THREE.Vector3();
+			mesh.getWorldPosition(center);
+			const spec = PLANETS.find(pp => pp.name === planetName);
+			return { center, radius: (spec?.radiusPx ?? 5) };
+		};
+		flightRef.current = new FlightController(getPlanetInfo);
 
 		// Starfield: multi-layer distant shell + Milky Way band
 		const STAR_SHELL_RADIUS = 1800; // less than camera far (2000)
@@ -426,16 +429,21 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 		};
 
 		const enterImmersive = (name: string) => {
-			if (!flightRef.current) return;
-			flightRef.current.enterImmersive(name, camera.position, cameraTarget);
-			setImmersiveUiVisible(true);
-			paused = true;
+			try {
+				if (!flightRef.current) return;
+				flightRef.current.enterImmersive(name, camera.position.clone(), cameraTarget.clone());
+				setImmersiveUiVisible(true);
+				// keep sim running so planets move
+				paused = false;
+			} catch {}
 		};
 
 		const exitImmersive = () => {
-			if (!flightRef.current) return;
-			flightRef.current.exitImmersive(camera.position, cameraTarget);
-			setImmersiveUiVisible(false);
+			try {
+				if (!flightRef.current) return;
+				flightRef.current.exitImmersive(camera.position.clone(), cameraTarget.clone());
+				setImmersiveUiVisible(false);
+			} catch {}
 		};
 		const animate = () => {
 			const nowMs = performance.now();
