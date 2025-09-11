@@ -471,7 +471,7 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 
 			const flight = flightRef.current;
 			if (flight) {
-				const out = flight.update(paused ? 0 : deltaSec);
+				const out = flight.update(deltaSec);
 				if (out) {
 					desiredPos.copy(out.desiredPosition);
 					desiredTarget.copy(out.desiredTarget);
@@ -673,6 +673,15 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 							}}
 						>
 							Enter immersive
+						</button>
+						<button
+							className="px-2 py-1 text-xs rounded bg-slate-800 border border-slate-700 hover:bg-slate-700"
+							onClick={() => {
+								const el = containerRef.current as unknown as { __exitImmersive?: () => void } | null;
+								if (el && el.__exitImmersive) el.__exitImmersive();
+							}}
+						>
+							Exit immersive
 						</button>
 					</div>
 				</div>,
