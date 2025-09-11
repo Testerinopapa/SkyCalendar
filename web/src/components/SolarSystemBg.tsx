@@ -232,6 +232,8 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 		const nameToMesh = new Map<string, THREE.Mesh>();
 		const glowTexture = createGlowTexture();
 		const AU_TO_PX = 120; // scale factor: 1 AU = 120 px (tune for view)
+		const texLoader = new THREE.TextureLoader();
+
 		PLANETS.forEach((p) => {
 			const aAU = ELEMENTS[p.name as PlanetName].aAU;
 			const orbitR = aAU * AU_TO_PX; // draw based on semi-major axis
@@ -254,10 +256,35 @@ export default function SolarSystemBg({ preset = 'high' }: { preset?: 'low' | 'm
 
 			// Simple atmosphere shell for Earth
 			if (isEarth) {
+				// Day albedo map
+				texLoader.load(
+					'https://www.solarsystemscope.com/textures/download/2k_earth_daymap.jpg',
+					(tex) => {
+						tex.colorSpace = THREE.SRGBColorSpace as any;
+						tex.anisotropy = 2;
+						(planet.material as THREE.MeshStandardMaterial).map = tex;
+						(planet.material as THREE.MeshStandardMaterial).needsUpdate = true;
+					},
+					undefined,
+					() => {}
+				);
+
+				// Clouds layer
 				const atmoGeo = new THREE.SphereGeometry(p.radiusPx * 1.05, 32, 32);
-				const atmoMat = new THREE.MeshBasicMaterial({ color: 0x6cb2eb, transparent: true, opacity: 0.15, blending: THREE.AdditiveBlending, depthWrite: false });
+				const atmoMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false });
 				const atmo = new THREE.Mesh(atmoGeo, atmoMat);
 				planet.add(atmo);
+				texLoader.load(
+					'https://www.solarsystemscope.com/textures/download/2k_earth_clouds.jpg',
+					(tex) => {
+						tex.colorSpace = THREE.SRGBColorSpace as any;
+						tex.anisotropy = 2;
+						atmoMat.map = tex;
+						atmoMat.needsUpdate = true;
+					},
+					undefined,
+					() => {}
+				);
 			}
 
 			// Invisible larger hit-sphere for easier picking
